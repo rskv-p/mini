@@ -26,7 +26,7 @@ var startCmd = &cobra.Command{
 	Short: "Start services via launcher",
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		data, err := os.ReadFile("_data/cfg/runn.config.json")
+		data, err := os.ReadFile(".data/cfg/runn.config.json")
 		if err != nil {
 			return fmt.Errorf("read config: %w", err)
 		}
@@ -79,7 +79,7 @@ var stopCmd = &cobra.Command{
 	Short: "Stop all running services",
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		data, err := os.ReadFile("_data/cfg/runn.config.json")
+		data, err := os.ReadFile(".data/cfg/runn.config.json")
 		if err != nil {
 			return err
 		}
@@ -102,7 +102,7 @@ var listCmd = &cobra.Command{
 	Short: "List running services",
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		data, err := os.ReadFile("_data/cfg/runn.config.json")
+		data, err := os.ReadFile(".data/cfg/runn.config.json")
 		if err != nil {
 			return err
 		}

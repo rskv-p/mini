@@ -13,13 +13,13 @@ import (
 
 func main() {
 	// Load config
-	cfgData, err := os.ReadFile("_data/cfg/nats.config.json")
+	cfgData, err := os.ReadFile(".data/cfg/nats.config.json")
 	if err != nil {
 		panic("failed to read nats.config.json: " + err.Error())
 	}
 
 	var cfg nats_cfg.NatsConfig
-	x_log.InitWithConfig(&cfg.Logger, "nats")
+	x_log.InitWithConfig(&cfg.Logger, "natsgi")
 
 	if err := json.Unmarshal(cfgData, &cfg); err != nil {
 		panic("invalid config.json: " + err.Error())

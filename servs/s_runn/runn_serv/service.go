@@ -52,9 +52,9 @@ func (r *RunnService) StartServiceLocal(name string) error {
 	// Prepare command
 	cmd := exec.Command(conf.Path, conf.Args...)
 
-	// Setup logging to _data/log/<name>.log
-	_ = os.MkdirAll("_data/log", 0755)
-	logPath := filepath.Join("_data/log", name+".log")
+	// Setup logging to .data/log/<name>.log
+	_ = os.MkdirAll(".data/log", 0755)
+	logPath := filepath.Join(".data/log", name+".log")
 	logFile, err := os.Create(logPath)
 	if err != nil {
 		return err

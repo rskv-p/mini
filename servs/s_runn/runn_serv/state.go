@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const statePath = "_data/data/runn.state.json"
+const statePath = ".data/data/runn.state.json"
 
 // StateEntry holds persisted info about a running process
 type StateEntry struct {

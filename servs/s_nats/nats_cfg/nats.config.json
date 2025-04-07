@@ -8,7 +8,7 @@
   "jetstream": true,
     "Logger": {
     "Level": "info",
-    "LogFile": "_data/log/nats.log",
+    "LogFile": ".data/log/nats.log",
     "ToConsole": false,
     "ToFile": true,
     "ColoredFile": false,

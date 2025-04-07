@@ -17,7 +17,7 @@ func main() {
 	force := len(os.Args) > 1 && strings.EqualFold(os.Args[1], "--force")
 
 	// Load config
-	data, err := os.ReadFile("_data/cfg/runn.config.json")
+	data, err := os.ReadFile(".data/cfg/runn.config.json")
 	if err != nil {
 		x_log.Error().Err(err).Str("file", "runn.config.json").Msg("failed to read config")
 		os.Exit(1)

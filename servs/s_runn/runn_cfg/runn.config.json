@@ -1,7 +1,7 @@
 {
   "Logger": {
     "Level": "info",
-    "LogFile": "_data/log/runn.log",
+    "LogFile": ".data/log/runn.log",
     "ToConsole": false,
     "ToFile": true,
     "ColoredFile": false,
@@ -15,7 +15,7 @@
   "services": [
     {
       "name": "s_nats",
-      "path": "_data/bin/s_nats",
+      "path": ".data/bin/s_nats",
       "args": [],
       "auto_restart": true
     }

@@ -12,7 +12,7 @@
         "go",
         "build",
         "-o",
-        "./_data/bin/mini",
+        "./.data/bin/mini",
         "./main.go"
       ]
     },
@@ -26,7 +26,7 @@
         "go",
         "build",
         "-o",
-        "./_data/bin/s_runn",
+        "./.data/bin/s_runn",
         "./servs/s_runn/main.go"
       ]
     },
@@ -40,7 +40,7 @@
         "go",
         "build",
         "-o",
-        "./_data/bin/s_nats",
+        "./.data/bin/s_nats",
         "./servs/s_nats/main.go"
       ]
     }
