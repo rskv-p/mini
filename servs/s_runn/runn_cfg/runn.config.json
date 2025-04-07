@@ -1,0 +1,10 @@
+{
+  "services": [
+    {
+      "name": "s_nats",
+      "path": "./servs/s_nats/main",
+      "args": [],
+      "auto_restart": true
+    }
+  ]
+}
