@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/signal"
 
@@ -12,21 +11,17 @@ import (
 )
 
 func main() {
-	// Load config
-	cfgData, err := os.ReadFile(".data/cfg/nats.config.json")
+
+	cfg, err := nats_cfg.LoadConfig()
 	if err != nil {
-		panic("failed to read nats.config.json: " + err.Error())
+		x_log.Error().Err(err).Str("file", "nats.config.json").Msg("failed to read config")
+		os.Exit(1)
 	}
 
-	var cfg nats_cfg.NatsConfig
-	x_log.InitWithConfig(&cfg.Logger, "natsgi")
-
-	if err := json.Unmarshal(cfgData, &cfg); err != nil {
-		panic("invalid config.json: " + err.Error())
-	}
+	x_log.InitWithConfig(&cfg.Logger, "nats")
 
 	// Init and start service
-	svc := nats_serv.New(cfg)
+	svc := nats_serv.New(*cfg)
 	if err := svc.Init(); err != nil {
 		panic("init failed: " + err.Error())
 	}

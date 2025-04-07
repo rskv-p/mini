@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,30 +16,24 @@ func main() {
 	force := len(os.Args) > 1 && strings.EqualFold(os.Args[1], "--force")
 
 	// Load config
-	data, err := os.ReadFile(".data/cfg/runn.config.json")
+	cfg, err := runn_cfg.LoadConfig()
 	if err != nil {
 		x_log.Error().Err(err).Str("file", "runn.config.json").Msg("failed to read config")
 		os.Exit(1)
 	}
 
-	var cfg runn_cfg.RunnConfig
 	x_log.InitWithConfig(&cfg.Logger, "runn")
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		x_log.Error().Err(err).Msg("failed to parse config")
-		os.Exit(1)
-	}
-
 	x_log.Info().Int("services", len(cfg.Services)).Msg("config loaded")
 
 	// Resolve startup order
-	ordered, err := runn_cfg.ResolveStartupOrder(cfg)
+	ordered, err := runn_cfg.ResolveStartupOrder(*cfg)
 	if err != nil {
 		x_log.Error().Err(err).Msg("dependency resolution failed")
 		os.Exit(1)
 	}
 
 	// Init launcher
-	launcher := runn_serv.New(cfg)
+	launcher := runn_serv.New(*cfg)
 	client := runn_client.NewLocalClient(launcher)
 
 	// Load previous state

@@ -1,4 +1,11 @@
 {
+  "name": "s_runn",
+  "version": "1.0.0",
+  "description": "Runn service",
+  "queue_group": "default_group",
+  "host": "127.0.0.1",
+  "port": 4008,
+
   "Logger": {
     "Level": "info",
     "LogFile": ".data/log/runn.log",

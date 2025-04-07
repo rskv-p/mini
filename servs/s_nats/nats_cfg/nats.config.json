@@ -2,7 +2,7 @@
   "name": "s_nats",
   "version": "1.0.0",
   "description": "Embedded NATS server with JetStream support",
-  "queue_group": "nats",
+  "queue_group": "default_group",
   "host": "127.0.0.1",
   "port": 4222,
   "jetstream": true,
