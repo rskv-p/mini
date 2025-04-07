@@ -8,7 +8,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "github.com/rskv-p/mini",
+	Use:   "mini",
 	Short: "Microservice platform",
 }
 
@@ -19,6 +19,6 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(cmd_runn.Cmd)
+	rootCmd.AddCommand(cmd_runn.RootCmd)
 	rootCmd.AddCommand(cmd_nats.Cmd)
 }

@@ -1,80 +1,43 @@
 package main
 
 import (
-	"context"
-	"os"
-	"os/signal"
-	"strings"
+	"log"
 
-	"github.com/rskv-p/mini/pkg/x_log"
+	"github.com/rskv-p/mini/servs/s_runn/runn_api"
 	"github.com/rskv-p/mini/servs/s_runn/runn_cfg"
-	"github.com/rskv-p/mini/servs/s_runn/runn_client"
 	"github.com/rskv-p/mini/servs/s_runn/runn_serv"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func main() {
-	force := len(os.Args) > 1 && strings.EqualFold(os.Args[1], "--force")
+	// Load configuration
+	if err := runn_cfg.Load(""); err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
 
-	// Load config
-	cfg, err := runn_cfg.LoadConfig()
+	// Connect to the database
+	db, err := gorm.Open(sqlite.Open(runn_cfg.C().DBPath), &gorm.Config{})
 	if err != nil {
-		x_log.Error().Err(err).Str("file", "runn.config.json").Msg("failed to read config")
-		os.Exit(1)
+		log.Fatalf("Failed to connect to the database: %v", err)
 	}
 
-	x_log.InitWithConfig(&cfg.Logger, "runn")
-	x_log.Info().Int("services", len(cfg.Services)).Msg("config loaded")
-
-	// Resolve startup order
-	ordered, err := runn_cfg.ResolveStartupOrder(*cfg)
+	// Initialize the process manager
+	manager, err := runn_serv.New(db)
 	if err != nil {
-		x_log.Error().Err(err).Msg("dependency resolution failed")
-		os.Exit(1)
+		log.Fatalf("Failed to initialize the process manager: %v", err)
 	}
 
-	// Init launcher
-	launcher := runn_serv.New(*cfg)
-	client := runn_client.NewLocalClient(launcher)
-
-	// Load previous state
-	state, _ := runn_serv.LoadState()
-	active := map[string]runn_serv.StateEntry{}
-	if state != nil {
-		active = state.Processes
+	// Load preconfigured processes into the database
+	if err := runn_serv.LoadPreconfiguredProcesses(db); err != nil {
+		log.Fatalf("Error loading preconfigured processes: %v", err)
 	}
 
-	// Handle --force (stop all previously started services)
-	if force {
-		x_log.Info().Msg("--force mode: stopping all previously running services")
-		_ = client.StopAllServices(context.Background())
-	}
+	// Start the REST API in a goroutine to avoid blocking the main thread
+	go func() {
+		runn_api.ServeREST(runn_cfg.C().HTTPAddress, manager)
+	}()
 
-	// Start services in resolved order
-	for _, svc := range ordered {
-		if !svc.AutoRestart {
-			continue
-		}
-
-		if prev, ok := active[svc.Name]; ok && !force {
-			x_log.Info().Str("name", svc.Name).Int("pid", prev.Pid).Msg("already running, skipping")
-			continue
-		}
-
-		if err := client.StartService(context.Background(), svc.Name); err != nil {
-			x_log.Error().Err(err).Str("name", svc.Name).Msg("failed to start service")
-		} else {
-			x_log.Info().Str("name", svc.Name).Msg("service started")
-		}
-	}
-
-	// Wait for interrupt
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	x_log.Info().Msg("runn active — press Ctrl+C to stop")
-	<-ctx.Done()
-
-	x_log.Info().Msg("shutting down all services")
-	_ = client.StopAllServices(context.Background())
-	x_log.Info().Msg("done")
+	// Block the main thread to keep the server running
+	select {} // Blocks the program while the server is running
 }

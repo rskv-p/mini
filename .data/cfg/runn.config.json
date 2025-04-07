@@ -1,23 +1,25 @@
 {
-  "Logger": {
-    "Level": "info",
-    "LogFile": ".data/log/runn.log",
-    "ToConsole": false,
-    "ToFile": true,
-    "ColoredFile": false,
-    "Style": "dark",
-    "MaxSize": 10,
-    "MaxBackups": 5,
-    "MaxAge": 7,
-    "Compress": true
-  },
-
-  "services": [
+  "db_path": "./.data/data/runn.db",
+  "log_level": "debug",
+  "log_to_file": true,
+  "http_address": ":9000",
+  "restart_max": 5,
+  "timeout_sec": 15,
+  "jwt_secret": "my-top-secret-key",
+  "admin_password": "superadmin123",
+  "auth_enabled": true,
+  "preconfigured_processes": [
     {
-      "name": "s_nats",
-      "path": ".data/bin/s_nats",
-      "args": [],
-      "auto_restart": true
+      "cmd": "./microservice1",
+      "dir": "./microservices/",
+      "name": "microservice1",
+      "start_on_launch": true
+    },
+    {
+      "cmd": "./microservice2",
+      "dir": "./microservices/",
+      "name": "microservice2",
+      "start_on_launch": false
     }
   ]
 }
