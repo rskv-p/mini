@@ -24,7 +24,6 @@ type Config struct {
 	DoneHandler  DoneHandler  // Handler called after Stop()
 	ErrorHandler ErrHandler   // Optional error handler
 	Middleware   []Middleware // Global middlewares
-	Logger       x_log.Logger // Optional structured logger
 	Validator    Validator    // Optional JSON payload validator
 	JWTVerifier  JWTVerifier  // Optional JWT verifier
 
@@ -40,9 +39,7 @@ func RequireJWT(verifier JWTVerifier) Middleware {
 		return HandlerFunc(func(req Request) {
 			token := req.Headers().Get("Authorization") // Get token from header
 			if token == "" {
-				if l := reqLogger(req); l != nil {
-					l.Warnw("JWT rejected: missing Authorization header", "subject", req.Subject())
-				}
+				x_log.Warn().Str("subject", req.Subject()).Msg("JWT rejected: missing Authorization header")
 				_ = req.Error("401", "missing Authorization header", nil) // Error if no token
 				return
 			}
@@ -51,9 +48,7 @@ func RequireJWT(verifier JWTVerifier) Middleware {
 			}
 
 			if _, err := verifier.VerifyJWT(token); err != nil {
-				if l := reqLogger(req); l != nil {
-					l.Warnw("JWT rejected: invalid token", "subject", req.Subject(), "err", err)
-				}
+				x_log.Warn().Str("subject", req.Subject()).Err(err).Msg("JWT rejected: invalid token")
 				_ = req.Error("401", "invalid token: "+err.Error(), nil) // Error if invalid token
 				return
 			}
@@ -63,23 +58,13 @@ func RequireJWT(verifier JWTVerifier) Middleware {
 	}
 }
 
-// reqLogger retrieves the logger from the request.
-func reqLogger(req Request) x_log.Logger {
-	if r, ok := req.(*request); ok {
-		return r.logger
-	}
-	return nil
-}
-
 // RequireRole ensures the request has the required role in the JWT.
 func RequireRole(role string, verifier JWTVerifier) Middleware {
 	return func(next Handler) Handler {
 		return HandlerFunc(func(req Request) {
 			token := req.Headers().Get("Authorization") // Get token from header
 			if token == "" {
-				if l := reqLogger(req); l != nil {
-					l.Warnw("role check rejected: missing Authorization header", "subject", req.Subject(), "required_role", role)
-				}
+				x_log.Warn().Str("subject", req.Subject()).Str("required_role", role).Msg("role check rejected: missing Authorization header")
 				_ = req.Error("401", "missing Authorization header", nil) // Error if no token
 				return
 			}
@@ -89,18 +74,14 @@ func RequireRole(role string, verifier JWTVerifier) Middleware {
 
 			claims, err := verifier.VerifyJWT(token) // Verify JWT token
 			if err != nil {
-				if l := reqLogger(req); l != nil {
-					l.Warnw("role check rejected: invalid token", "subject", req.Subject(), "required_role", role, "err", err)
-				}
+				x_log.Warn().Str("subject", req.Subject()).Str("required_role", role).Err(err).Msg("role check rejected: invalid token")
 				_ = req.Error("401", "invalid token: "+err.Error(), nil) // Error if invalid token
 				return
 			}
 
 			roles, ok := claims["roles"] // Extract roles claim
 			if !ok {
-				if l := reqLogger(req); l != nil {
-					l.Warnw("role check rejected: missing roles claim", "subject", req.Subject(), "required_role", role)
-				}
+				x_log.Warn().Str("subject", req.Subject()).Str("required_role", role).Msg("role check rejected: missing roles claim")
 				_ = req.Error("403", "missing roles claim", nil) // Error if no roles claim
 				return
 			}
@@ -121,16 +102,12 @@ func RequireRole(role string, verifier JWTVerifier) Middleware {
 					}
 				}
 			default:
-				if l := reqLogger(req); l != nil {
-					l.Warnw("role check rejected: invalid roles format", "subject", req.Subject(), "required_role", role)
-				}
+				x_log.Warn().Str("subject", req.Subject()).Str("required_role", role).Msg("role check rejected: invalid roles format")
 				_ = req.Error("403", "invalid roles format", nil) // Error if roles format is invalid
 				return
 			}
 
-			if l := reqLogger(req); l != nil {
-				l.Warnw("role check rejected: forbidden", "subject", req.Subject(), "required_role", role)
-			}
+			x_log.Warn().Str("subject", req.Subject()).Str("required_role", role).Msg("role check rejected: forbidden")
 			_ = req.Error("403", "forbidden", nil) // Forbidden if role doesn't match
 		})
 	}

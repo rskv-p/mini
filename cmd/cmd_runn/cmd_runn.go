@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rskv-p/mini/pkg/x_log"
+	"github.com/rskv-p/mini/pkg/x_log" // Убедитесь, что x_log импортирован правильно
 	"github.com/rskv-p/mini/servs/s_runn/runn_cfg"
 	"github.com/rskv-p/mini/servs/s_runn/runn_client"
 	"github.com/rskv-p/mini/servs/s_runn/runn_serv"
@@ -25,7 +25,6 @@ var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start services via launcher",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		log, _ := x_log.NewLogger()
 
 		data, err := os.ReadFile("_data/cfg/runn.config.json")
 		if err != nil {
@@ -52,7 +51,7 @@ var startCmd = &cobra.Command{
 		}
 
 		if force {
-			log.Infow("--force: stopping all")
+			x_log.Info().Msg("--force: stopping all") // Используем Info().Msg
 			_ = client.StopAllServices(context.Background())
 		}
 
@@ -61,13 +60,13 @@ var startCmd = &cobra.Command{
 				continue
 			}
 			if prev, ok := active[svc.Name]; ok && !force {
-				log.Infow("already running, skip", "name", svc.Name, "pid", prev.Pid)
+				x_log.Info().Str("name", svc.Name).Int("pid", prev.Pid).Msg("already running, skip") // Используем Info().Str()
 				continue
 			}
 			if err := client.StartService(context.Background(), svc.Name); err != nil {
-				log.Errorw("failed to start", "name", svc.Name, "err", err)
+				x_log.Error().Str("name", svc.Name).Err(err).Msg("failed to start") // Используем Error().Str().Err()
 			} else {
-				log.Infow("started", "name", svc.Name)
+				x_log.Info().Str("name", svc.Name).Msg("started") // Используем Info().Str()
 			}
 		}
 
@@ -79,7 +78,7 @@ var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop all running services",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		log, _ := x_log.NewLogger()
+
 		data, err := os.ReadFile("_data/cfg/runn.config.json")
 		if err != nil {
 			return err
@@ -93,7 +92,7 @@ var stopCmd = &cobra.Command{
 		launcher := runn_serv.New(cfg)
 		client := runn_client.NewLocalClient(launcher)
 
-		log.Infow("stopping all services")
+		x_log.Info().Msg("stopping all services") // Используем Info().Msg
 		return client.StopAllServices(context.Background())
 	},
 }
@@ -102,7 +101,7 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List running services",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		log, _ := x_log.NewLogger()
+
 		data, err := os.ReadFile("_data/cfg/runn.config.json")
 		if err != nil {
 			return err
@@ -126,7 +125,7 @@ var listCmd = &cobra.Command{
 			if svc.Running {
 				status = fmt.Sprintf("running (pid=%d, uptime=%ds)", svc.Pid, svc.Uptime)
 			}
-			log.Infow("service", "name", svc.Name, "status", status)
+			x_log.Info().Str("name", svc.Name).Str("status", status).Msg("service") // Используем Info().Str()
 		}
 		return nil
 	},

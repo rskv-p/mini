@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/rskv-p/mini/pkg/x_log"
 )
 
 const (
@@ -69,21 +71,18 @@ func joinParts(parts []string) string {
 // valid validates required Config fields.
 func (c *Config) valid() error {
 	if !nameRegexp.MatchString(c.Name) {
-		if c.Logger != nil {
-			c.Logger.Errorw("invalid service name", "name", c.Name) // Log invalid service name
-		}
+		// Log invalid service name using global logger
+		x_log.Error().Str("name", c.Name).Msg("invalid service name")
 		return fmt.Errorf("%w: invalid service name", ErrConfigValidation) // Return error for invalid service name
 	}
 	if !semVerRegexp.MatchString(c.Version) {
-		if c.Logger != nil {
-			c.Logger.Errorw("invalid version format", "version", c.Version) // Log invalid version format
-		}
+		// Log invalid version format using global logger
+		x_log.Error().Str("version", c.Version).Msg("invalid version format")
 		return fmt.Errorf("%w: invalid version (expected SemVer)", ErrConfigValidation) // Return error for invalid version
 	}
 	if c.QueueGroup != "" && !subjectRegexp.MatchString(c.QueueGroup) {
-		if c.Logger != nil {
-			c.Logger.Errorw("invalid queue group", "queue_group", c.QueueGroup) // Log invalid queue group
-		}
+		// Log invalid queue group using global logger
+		x_log.Error().Str("queue_group", c.QueueGroup).Msg("invalid queue group")
 		return fmt.Errorf("%w: invalid queue group", ErrConfigValidation) // Return error for invalid queue group
 	}
 	return nil // Return nil if all validations pass

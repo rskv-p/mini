@@ -3,6 +3,8 @@ package core
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/rskv-p/mini/pkg/x_log"
 )
 
 const StatsResponseType = "io.nats.micro.v1.stats_response" // MIME type for stats responses
@@ -36,12 +38,8 @@ func (s *service) Stats() Stats {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if s.Logger != nil {
-		s.Logger.Infow("collecting service stats", // Log stats collection
-			"endpoints", len(s.endpoints),
-			"since", s.started.Format(time.RFC3339),
-		)
-	}
+	// Log stats collection using global logger
+	x_log.Info().Int("endpoints", len(s.endpoints)).Str("since", s.started.Format(time.RFC3339)).Msg("collecting service stats")
 
 	stats := Stats{
 		ServiceIdentity: s.serviceIdentity(),
@@ -69,21 +67,16 @@ func (s *service) Stats() Stats {
 		if s.StatsHandler != nil {
 			if data, err := json.Marshal(s.StatsHandler(ep)); err == nil {
 				endpointStats.Data = data
-			} else if s.Logger != nil {
-				s.Logger.Errorw("failed to serialize custom stats", // Log error if custom stats serialization fails
-					"endpoint", ep.Name,
-					"err", err,
-				)
+			} else {
+				// Log error if custom stats serialization fails using global logger
+				x_log.Error().Str("endpoint", ep.Name).Err(err).Msg("failed to serialize custom stats")
 			}
 		}
 
 		// Log warnings for endpoints with errors
-		if ep.stats.NumErrors > 0 && s.Logger != nil {
-			s.Logger.Warnw("endpoint has errors",
-				"name", ep.Name,
-				"errors", ep.stats.NumErrors,
-				"last_error", ep.stats.LastError,
-			)
+		if ep.stats.NumErrors > 0 {
+			// Log endpoint errors using global logger
+			x_log.Warn().Str("name", ep.Name).Int("errors", ep.stats.NumErrors).Str("last_error", ep.stats.LastError).Msg("endpoint has errors")
 		}
 
 		stats.Endpoints = append(stats.Endpoints, endpointStats) // Add stats for endpoint
@@ -104,13 +97,8 @@ func (s *service) Reset() {
 
 	s.started = time.Now().UTC() // Reset start time
 
-	// Log reset information
-	if s.Logger != nil {
-		s.Logger.Infow("stats reset",
-			"timestamp", s.started.Format(time.RFC3339),
-			"endpoints", len(s.endpoints),
-		)
-	}
+	// Log reset information using global logger
+	x_log.Info().Str("timestamp", s.started.Format(time.RFC3339)).Int("endpoints", len(s.endpoints)).Msg("stats reset")
 }
 
 // reset clears collected stats for a single endpoint.

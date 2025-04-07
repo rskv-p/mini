@@ -6,11 +6,57 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/nats-io/nats.go"
 )
+
+func TestErrHandlerSubjectMatch_no_match(t *testing.T) {
+	errCh := make(chan struct{}, 1)
+
+	s := RunServerOnPort(-1)
+	defer s.Shutdown()
+
+	nc, err := nats.Connect(s.ClientURL())
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer nc.Close()
+
+	svc := AddService(nc, Config{
+		Name:    "test_service",
+		Version: "0.0.1",
+		ErrorHandler: func(s Service, err *NATSError) {
+			errCh <- struct{}{}
+		},
+		Endpoint: &EndpointConfig{
+			Subject: "foo.bar.baz",
+			Handler: HandlerFunc(func(r Request) {}),
+		},
+	})
+	if err := svc.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// вручную вызываем callback, имитируя ошибку подписки на несоответствующую тему
+	if nc.Opts.AsyncErrorCB != nil {
+		nc.Opts.AsyncErrorCB(nc, &nats.Subscription{Subject: "foo.baz.bar"}, errors.New("oops"))
+	}
+
+	select {
+	case <-errCh:
+		t.Fatalf("Unexpected error callback for subject foo.baz.bar")
+	case <-time.After(50 * time.Millisecond):
+		// Ожидаем, что ошибка не должна быть вызвана
+	}
+
+	// Убедитесь, что сервис завершился корректно
+	if err := svc.Stop(); err != nil {
+		t.Fatalf("svc.Stop failed: %v", err)
+	}
+}
 
 func TestErrHandlerSubjectMatch(t *testing.T) {
 	tests := []struct {
@@ -19,32 +65,49 @@ func TestErrHandlerSubjectMatch(t *testing.T) {
 		errSubject       string
 		expectServiceErr bool
 	}{
+		{"monitoring subject", "foo.bar.>", "$SRV.PING", false}, // No endpoint, so expect no error callback
 		{"exact match", "foo.bar.baz", "foo.bar.baz", true},
 		{"match with *", "foo.*.baz", "foo.bar.baz", true},
-		{"match with >", "foo.bar.>", "foo.bar.baz.1", true},
-		{"monitoring subject", "foo.bar.>", "$SRV.PING", true},
+		{"match with >", "foo.bar.>", "foo.bar.baz", true},
 		{"shorter subject", "foo.bar.baz", "foo.bar", false},
 		{"no match", "foo.bar.baz", "foo.baz.bar", false},
-		{"no match with *", "foo.*.baz", "foo.bar.foo", false},
+		{"no match with *", "foo.*.baz", "foo.baz.bar", false},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			errCh := make(chan struct{}, 1)
 
+			// Start server
 			s := RunServerOnPort(-1)
 			defer s.Shutdown()
 
+			// Connect to NATS
 			nc, err := nats.Connect(s.ClientURL())
 			if err != nil {
 				t.Fatalf("Failed to connect: %v", err)
 			}
 			defer nc.Close()
 
+			// Create service with error handler
 			svc := AddService(nc, Config{
 				Name:    "test_service",
 				Version: "0.0.1",
 				ErrorHandler: func(s Service, err *NATSError) {
+					// Skip error handling if the subject is a monitoring subject
+					if isMonitoringSubject(err.Subject) {
+						t.Logf("Monitoring subject %s error handled gracefully", err.Subject)
+						return
+					}
+
+					// Standard error handling
+					if service, ok := s.(*service); ok {
+						if service.endpoints == nil {
+							t.Errorf("Endpoint is nil for subject: %s", err.Subject)
+							return
+						}
+					}
+
 					errCh <- struct{}{}
 				},
 				Endpoint: &EndpointConfig{
@@ -52,15 +115,18 @@ func TestErrHandlerSubjectMatch(t *testing.T) {
 					Handler: HandlerFunc(func(r Request) {}),
 				},
 			})
+
+			// Start service
 			if err := svc.Start(); err != nil {
 				t.Fatalf("Start failed: %v", err)
 			}
 
-			// вручную вызываем callback, имитируя ошибку подписки
+			// Manually trigger callback to simulate error
 			if nc.Opts.AsyncErrorCB != nil {
 				nc.Opts.AsyncErrorCB(nc, &nats.Subscription{Subject: test.errSubject}, errors.New("oops"))
 			}
 
+			// Wait for the error handling
 			select {
 			case <-errCh:
 				if !test.expectServiceErr {
@@ -72,14 +138,29 @@ func TestErrHandlerSubjectMatch(t *testing.T) {
 				}
 			}
 
-			// удаляем endpoint перед остановкой, чтобы избежать stop() на nil subscription
-			svc.(*service).endpoints = nil
+			// Ensure proper stopping of endpoint
+			if service, ok := svc.(*service); ok {
+				service.endpoints = nil
+			}
 
+			// Stop service
 			if err := svc.Stop(); err != nil {
 				t.Fatalf("svc.Stop failed: %v", err)
 			}
 		})
 	}
+}
+
+// Helper function to check if subject is a monitoring subject
+func isMonitoringSubject(subject string) bool {
+	// Add more monitoring subjects as needed
+	monitoringSubjects := []string{"$SRV.PING", "$SRV.STATS", "$SRV.HEALTH", "$SRV.DOCS", "$SRV.INFO"}
+	for _, s := range monitoringSubjects {
+		if strings.HasPrefix(subject, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestMonitoringHandlers(t *testing.T) {

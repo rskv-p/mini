@@ -74,12 +74,8 @@ func (r *request) Respond(data []byte, opts ...RespondOpt) error {
 	}
 	if err := r.msg.RespondMsg(respMsg); err != nil {
 		r.respondError = fmt.Errorf("%w: %s", ErrRespond, err)
-		if r.logger != nil {
-			r.logger.Errorw("failed to respond",
-				"subject", r.msg.Subject,
-				"err", err,
-			)
-		}
+		// Log the error using global logger
+		x_log.Error().Str("subject", r.msg.Subject).Err(err).Msg("failed to respond")
 		return r.respondError
 	}
 	return nil
@@ -89,12 +85,8 @@ func (r *request) Respond(data []byte, opts ...RespondOpt) error {
 func (r *request) RespondJSON(value any, opts ...RespondOpt) error {
 	data, err := json.Marshal(value)
 	if err != nil {
-		if r.logger != nil {
-			r.logger.Errorw("failed to marshal JSON",
-				"subject", r.msg.Subject,
-				"err", err,
-			)
-		}
+		// Log the error using global logger
+		x_log.Error().Str("subject", r.msg.Subject).Err(err).Msg("failed to marshal JSON")
 		return ErrMarshalResponse
 	}
 	return r.Respond(data, opts...)
@@ -123,14 +115,9 @@ func (r *request) Error(code, description string, data []byte, opts ...RespondOp
 
 	if err := r.msg.RespondMsg(msg); err != nil {
 		r.respondError = err
-		if r.logger != nil {
-			r.logger.Errorw("failed to send error response",
-				"subject", r.msg.Subject,
-				"code", code,
-				"description", description,
-				"err", err,
-			)
-		}
+		// Log the error using global logger
+		x_log.Error().Str("subject", r.msg.Subject).Str("code", code).
+			Str("description", description).Err(err).Msg("failed to send error response")
 		return err
 	}
 

@@ -1,5 +1,9 @@
 package core
 
+import (
+	"github.com/rskv-p/mini/pkg/x_log"
+)
+
 // Verb defines built-in operation types.
 type Verb int64
 
@@ -77,26 +81,21 @@ func (s *service) collectDocs() map[string]any {
 				documented++
 			} else {
 				missing++
-				if s.Logger != nil {
-					s.Logger.Warnw("doc function returned nil", "endpoint", e.Name)
-				}
+				// Log warning for missing docs using global logger
+				x_log.Warn().Str("endpoint", e.Name).Msg("doc function returned nil")
 			}
 		} else {
 			missing++
-			if s.Logger != nil {
-				s.Logger.Warnw("endpoint is undocumented", "endpoint", e.Name)
-			}
+			// Log warning for undocumented endpoint using global logger
+			x_log.Warn().Str("endpoint", e.Name).Msg("endpoint is undocumented")
 		}
 	}
 
-	// Log the collected documentation stats
-	if s.Logger != nil {
-		s.Logger.Infow("collected endpoint docs",
-			"total", len(s.endpoints),
-			"documented", documented,
-			"missing", missing,
-		)
-	}
+	// Log the collected documentation stats using global logger
+	x_log.Info().Int("total", len(s.endpoints)).
+		Int("documented", documented).
+		Int("missing", missing).
+		Msg("collected endpoint docs")
 
 	// Return structured documentation
 	return map[string]any{

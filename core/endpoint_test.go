@@ -46,10 +46,12 @@ func TestAddEndpoint_Concurrency(t *testing.T) {
 	wg.Add(10)
 
 	// Add endpoints concurrently
-	for _, i := range make([]int, 10) {
+	for i := 0; i < 10; i++ {
 		go func(i int) {
 			defer wg.Done()
-			err := svc.AddEndpoint(fmt.Sprintf("test%d", i), ContextHandler(ctx, handler))
+			// Use a unique endpoint name for each iteration
+			endpointName := fmt.Sprintf("test%d", i)
+			err := svc.AddEndpoint(endpointName, ContextHandler(ctx, handler))
 			res <- err
 		}(i)
 	}

@@ -1,4 +1,3 @@
-// servs/s_nats/nats_serv/service.go
 package nats_serv
 
 import (
@@ -6,8 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rskv-p/mini/core"
-	"github.com/rskv-p/mini/pkg/x_log"
+	"github.com/rskv-p/mini/core" // Импортируем глобальный логгер
 	"github.com/rskv-p/mini/servs/s_nats/nats_api"
 	"github.com/rskv-p/mini/servs/s_nats/nats_cfg"
 
@@ -17,7 +15,6 @@ import (
 
 type natsService struct {
 	cfg  nats_cfg.NatsConfig
-	log  x_log.Logger
 	nc   *nats.Conn
 	ns   *server.Server
 	core core.Service
@@ -25,11 +22,8 @@ type natsService struct {
 
 // New creates a new embedded NATS service.
 func New(cfg nats_cfg.NatsConfig) core.Service {
-	log, _ := x_log.NewLogger()
-
 	return &natsService{
 		cfg: cfg,
-		log: log,
 	}
 }
 
@@ -63,7 +57,6 @@ func (s *natsService) Init() error {
 		Version:     s.cfg.Version,
 		Description: s.cfg.Description,
 		QueueGroup:  s.cfg.QueueGroup,
-		Logger:      s.log,
 	}
 	s.core = core.AddService(nc, coreCfg)
 	if err := s.core.Init(); err != nil {

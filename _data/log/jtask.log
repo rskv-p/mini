@@ -1,0 +1,54 @@
+{"level":"info","module":"main","level":"info","log_file":"_data/log/jtask.log","module":"main","console":true,"file":true,"colored_file":false,"style":"dark","time":"07-04 12:02:55","caller":"/home/pafthang/Downloads/jtask/pkg/x_log/logger.go:151","message":"logger initialized"}
+{"level":"info","module":"main","command":"jt","time":"07-04 12:02:55","caller":"/home/pafthang/Downloads/jtask/cmd/root.go:34","message":"executing root command"}
+{"level":"info","module":"main","path":"./tasks.json","time":"07-04 12:02:55","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:27","message":"loading tasks from file"}
+{"level":"info","module":"main","path":"./tasks.json","time":"07-04 12:02:55","caller":"/home/pafthang/Downloads/jtask/pkg/x_task/task.go:54","message":"loading tasks from file"}
+{"level":"info","module":"main","count":3,"path":"./tasks.json","time":"07-04 12:02:55","caller":"/home/pafthang/Downloads/jtask/pkg/x_task/task.go:71","message":"tasks loaded successfully"}
+{"level":"info","module":"main","count":3,"time":"07-04 12:02:55","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:49","message":"building task selection options"}
+{"level":"info","module":"main","selected":3,"tasks":["Build mini CLI binary","Build s_runn binary","Build s_nats binary"],"time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:74","message":"user selected tasks"}
+{"level":"info","module":"main","selected_tasks":["Build mini CLI binary","Build s_runn binary","Build s_nats binary"],"time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:79","message":"the following tasks were selected"}
+{"level":"info","module":"main","task":"Build s_nats binary","time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:103","message":"starting task"}
+{"level":"info","module":"main","task":"Build s_runn binary","time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:103","message":"starting task"}
+{"level":"info","module":"main","task":"Build mini CLI binary","time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:103","message":"starting task"}
+{"level":"info","module":"main","task":"Build s_nats binary","time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:110","message":"executing task (placeholder)"}
+{"level":"info","module":"main","task":"Build s_runn binary","time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:110","message":"executing task (placeholder)"}
+{"level":"info","module":"main","task":"Build mini CLI binary","time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:110","message":"executing task (placeholder)"}
+{"level":"info","module":"main","done":3,"time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:124","message":"all selected tasks processed"}
+{"level":"info","module":"main","time":"07-04 12:02:57","caller":"/home/pafthang/Downloads/jtask/cmd/root.go:47","message":"command executed successfully"}
+{"level":"info","module":"main","level":"info","log_file":"_data/log/jtask.log","module":"main","console":true,"file":true,"colored_file":false,"style":"dark","time":"07-04 12:07:01","caller":"/home/pafthang/Downloads/jtask/pkg/x_log/logger.go:151","message":"logger initialized"}
+{"level":"info","module":"main","command":"jt","time":"07-04 12:07:01","caller":"/home/pafthang/Downloads/jtask/cmd/root.go:34","message":"executing root command"}
+{"level":"info","module":"main","path":"./tasks.json","time":"07-04 12:07:01","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:20","message":"loading tasks from file"}
+{"level":"info","module":"main","path":"./tasks.json","time":"07-04 12:07:01","caller":"/home/pafthang/Downloads/jtask/pkg/x_task/task.go:54","message":"loading tasks from file"}
+{"level":"info","module":"main","count":3,"path":"./tasks.json","time":"07-04 12:07:01","caller":"/home/pafthang/Downloads/jtask/pkg/x_task/task.go:71","message":"tasks loaded successfully"}
+{"level":"info","module":"main","count":3,"time":"07-04 12:07:01","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:42","message":"building task selection options"}
+{"level":"info","module":"main","selected":3,"tasks":["Build mini CLI binary","Build s_runn binary","Build s_nats binary"],"time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:67","message":"user selected tasks"}
+{"level":"info","module":"main","selected_tasks":["Build mini CLI binary","Build s_runn binary","Build s_nats binary"],"time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:72","message":"the following tasks were selected"}
+{"level":"info","module":"main","task":"Build s_nats binary","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:96","message":"starting task"}
+{"level":"info","module":"main","task":"Build s_runn binary","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:96","message":"starting task"}
+{"level":"info","module":"main","task":"Build mini CLI binary","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:96","message":"starting task"}
+{"level":"info","module":"main","task":"Build s_runn binary","output":"","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:161","message":"task output"}
+{"level":"info","module":"main","task":"Build s_runn binary","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:167","message":"task completed successfully"}
+{"level":"info","module":"main","task":"Build mini CLI binary","output":"","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:161","message":"task output"}
+{"level":"info","module":"main","task":"Build mini CLI binary","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:167","message":"task completed successfully"}
+{"level":"info","module":"main","task":"Build s_nats binary","output":"","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:161","message":"task output"}
+{"level":"info","module":"main","task":"Build s_nats binary","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:167","message":"task completed successfully"}
+{"level":"info","module":"main","done":3,"time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:121","message":"all selected tasks processed"}
+{"level":"info","module":"main","time":"07-04 12:07:03","caller":"/home/pafthang/Downloads/jtask/cmd/root.go:47","message":"command executed successfully"}
+{"level":"info","module":"main","level":"info","log_file":"_data/log/jtask.log","module":"main","console":true,"file":true,"colored_file":false,"style":"dark","time":"07-04 12:07:20","caller":"/home/pafthang/Downloads/jtask/pkg/x_log/logger.go:151","message":"logger initialized"}
+{"level":"info","module":"main","command":"jt","time":"07-04 12:07:20","caller":"/home/pafthang/Downloads/jtask/cmd/root.go:34","message":"executing root command"}
+{"level":"info","module":"main","path":"./tasks.json","time":"07-04 12:07:20","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:20","message":"loading tasks from file"}
+{"level":"info","module":"main","path":"./tasks.json","time":"07-04 12:07:20","caller":"/home/pafthang/Downloads/jtask/pkg/x_task/task.go:54","message":"loading tasks from file"}
+{"level":"info","module":"main","count":3,"path":"./tasks.json","time":"07-04 12:07:20","caller":"/home/pafthang/Downloads/jtask/pkg/x_task/task.go:71","message":"tasks loaded successfully"}
+{"level":"info","module":"main","count":3,"time":"07-04 12:07:20","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:42","message":"building task selection options"}
+{"level":"info","module":"main","selected":3,"tasks":["Build mini CLI binary","Build s_runn binary","Build s_nats binary"],"time":"07-04 12:07:22","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:67","message":"user selected tasks"}
+{"level":"info","module":"main","selected_tasks":["Build mini CLI binary","Build s_runn binary","Build s_nats binary"],"time":"07-04 12:07:22","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:72","message":"the following tasks were selected"}
+{"level":"info","module":"main","task":"Build s_nats binary","time":"07-04 12:07:22","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:96","message":"starting task"}
+{"level":"info","module":"main","task":"Build s_runn binary","time":"07-04 12:07:22","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:96","message":"starting task"}
+{"level":"info","module":"main","task":"Build mini CLI binary","time":"07-04 12:07:22","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:96","message":"starting task"}
+{"level":"info","module":"main","task":"Build s_runn binary","output":"","time":"07-04 12:07:22","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:161","message":"task output"}
+{"level":"info","module":"main","task":"Build s_runn binary","time":"07-04 12:07:22","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:167","message":"task completed successfully"}
+{"level":"info","module":"main","task":"Build mini CLI binary","output":"","time":"07-04 12:07:23","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:161","message":"task output"}
+{"level":"info","module":"main","task":"Build mini CLI binary","time":"07-04 12:07:23","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:167","message":"task completed successfully"}
+{"level":"info","module":"main","task":"Build s_nats binary","output":"","time":"07-04 12:07:23","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:161","message":"task output"}
+{"level":"info","module":"main","task":"Build s_nats binary","time":"07-04 12:07:23","caller":"/home/pafthang/Downloads/jtask/cmd/run.go:167","message":"task completed successfully"}
+{"level":"info","module":"main","done":3,"time":"07-04 12:07:23","caller":"/home/pafthang/Downloads/jtask/cmd/runs.go:121","message":"all selected tasks processed"}
+{"level":"info","module":"main","time":"07-04 12:07:23","caller":"/home/pafthang/Downloads/jtask/cmd/root.go:47","message":"command executed successfully"}

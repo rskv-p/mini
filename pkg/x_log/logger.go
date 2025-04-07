@@ -1,125 +1,222 @@
 package x_log
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"io"
 	"os"
+	"strings"
 	"time"
 
-	"go.uber.org/zap/zapcore"
+	"github.com/mattn/go-isatty"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// wrappedLogger is a minimal implementation of Logger with styling support.
-type wrappedLogger struct {
-	styles     *Styles
-	showTime   bool
-	timeFormat string
-	format     OutputFormat
-	minLevel   zapcore.Level
-	writer     io.Writer
+// ---------- Log Level ----------
+type Level int
+
+const (
+	DebugLevel Level = -4
+	InfoLevel  Level = 0
+	WarnLevel  Level = 4
+	ErrorLevel Level = 8
+	FatalLevel Level = 12
+)
+
+// Logger is an alias for zerolog.Logger
+type Logger = zerolog.Logger
+
+// ---------- Config ----------
+type Config struct {
+	Level       string `json:"Level"`       // log level (debug, info, etc)
+	LogFile     string `json:"LogFile"`     // path to log file
+	ToConsole   bool   `json:"ToConsole"`   // output to stderr
+	ToFile      bool   `json:"ToFile"`      // output to file
+	ColoredFile bool   `json:"ColoredFile"` // use ANSI color in file
+	Style       string `json:"Style"`       // "dark" or "light"
+	MaxSize     int    `json:"MaxSize"`     // file size in MB
+	MaxBackups  int    `json:"MaxBackups"`  // rotated files to keep
+	MaxAge      int    `json:"MaxAge"`      // days to keep logs
+	Compress    bool   `json:"Compress"`    // gzip old logs
 }
 
-// SetStyles applies custom styles or resets to default.
-func (l *wrappedLogger) SetStyles(s *Styles) {
-	if s == nil {
-		s = DefaultStyles()
+//
+// ---------- Initialization ----------
+
+// Init allows flexible initialization:
+// Init()                   → default config and "main" module
+// Init("cfg.json")         → config path and default "main" module
+// Init("cfg.json", "api")  → full control
+func Init(args ...string) {
+	var (
+		path   string
+		module = "main"
+	)
+	if len(args) > 0 {
+		path = args[0]
 	}
-	l.styles = s
+	if len(args) > 1 && args[1] != "" {
+		module = args[1]
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to load logger config")
+		cfg = &defaultConfig
+	}
+	InitWithConfig(cfg, module)
 }
 
-// SetReportTimestamp toggles timestamp visibility.
-func (l *wrappedLogger) SetReportTimestamp(enabled bool) {
-	l.showTime = enabled
+// initWithConfig sets global logger from Config
+func InitWithConfig(cfg *Config, module string) {
+	if cfg == nil {
+		cfg = &defaultConfig
+	}
+	log.Logger = NewWithConfig(cfg, module)
 }
 
-// SetTimeFormat sets the timestamp format.
-func (l *wrappedLogger) SetTimeFormat(format string) {
-	l.timeFormat = format
+// New returns a scoped logger (does not affect global log.Logger)
+func New(module ...string) zerolog.Logger {
+	base := log.Logger.With()
+	name := "main"
+	if len(module) > 0 && module[0] != "" {
+		name = module[0]
+	}
+	return base.Str("module", name).Logger()
 }
 
-// SetOutput sets the log output writer.
-func (l *wrappedLogger) SetOutput(w io.Writer) {
-	if w != nil {
-		l.writer = w
-	}
-}
+//
+// ---------- Internal logger builder ----------
 
-// Configure applies log format and minimum level.
-func (l *wrappedLogger) Configure(format OutputFormat, lvl Level) error {
-	l.format = format
-	l.minLevel = zapcore.Level(lvl)
-	l.writer = os.Stderr // default output
-	return nil
-}
+func NewWithConfig(cfg *Config, module string) zerolog.Logger {
+	zerolog.TimeFieldFormat = "02-01 15:04:05"
+	zerolog.TimestampFunc = time.Now
 
-// log renders and writes a full log line.
-func (l *wrappedLogger) log(level zapcore.Level, msg string, kvs ...any) {
-	if level < l.minLevel {
-		return
-	}
-	var line string
-	if l.format == OutputJSON {
-		line = l.formatJSON(level, msg, kvs)
-	} else {
-		line = l.renderLine(level, msg, kvs)
-	}
-	if l.writer == nil {
-		l.writer = os.Stderr
-	}
-	fmt.Fprintln(l.writer, line)
-}
+	var writers []io.Writer
+	styles := DefaultStylesByName(cfg.Style)
 
-func (l *wrappedLogger) formatJSON(level zapcore.Level, msg string, kvs []any) string {
-	entry := map[string]any{
-		"level":   level.String(),
-		"message": msg,
+	// Console writer (ensure correct output to console)
+	if cfg.ToConsole || isatty.IsTerminal(os.Stdout.Fd()) {
+		styles.Out = os.Stderr
+		// Use ConsoleWriterWithStyles for consistent console output
+		consoleWriter := ConsoleWriterWithStyles(styles)
+		writers = append(writers, consoleWriter)
 	}
-	if l.showTime {
-		entry["time"] = time.Now().Format(l.timeFormat)
-	}
-	for i := 0; i < len(kvs); i += 2 {
-		key := fmt.Sprint(kvs[i])
-		if i+1 < len(kvs) {
-			entry[key] = kvs[i+1]
+
+	// File writer
+	if cfg.ToFile && cfg.LogFile != "" {
+		fileWriter := &lumberjack.Logger{
+			Filename:   cfg.LogFile,
+			MaxSize:    cfg.MaxSize,
+			MaxBackups: cfg.MaxBackups,
+			MaxAge:     cfg.MaxAge,
+			Compress:   cfg.Compress,
+		}
+		if cfg.ColoredFile {
+			styles.Out = fileWriter
+			writers = append(writers, ConsoleWriterWithStyles(styles)) // Colored output to file
 		} else {
-			entry[key] = "<missing>"
+			writers = append(writers, fileWriter) // Plain output to file
 		}
 	}
-	data, _ := json.Marshal(entry)
-	return string(data)
+
+	if len(writers) == 0 {
+		writers = append(writers, io.Discard) // If no writers, discard logs
+	}
+
+	builder := zerolog.New(io.MultiWriter(writers...)).
+		With().
+		Timestamp().
+		Caller().
+		Str("module", module)
+
+	logger := builder.Logger()
+
+	// Global level setup
+	if lvl, err := zerolog.ParseLevel(strings.ToLower(cfg.Level)); err == nil {
+		zerolog.SetGlobalLevel(lvl)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+
+	// Log initialization
+	logger.Info().
+		Str("level", cfg.Level).
+		Str("log_file", cfg.LogFile).
+		Str("module", module).
+		Bool("console", cfg.ToConsole).        // Correct usage of Bool()
+		Bool("file", cfg.ToFile).              // Correct usage of Bool()
+		Bool("colored_file", cfg.ColoredFile). // Correct usage of Bool()
+		Str("style", cfg.Style).
+		Msg("logger initialized")
+
+	return logger
 }
 
-// --- Log methods by level ---
+//
+// ---------- Aliases (shortcuts) ----------
 
-func (l *wrappedLogger) Debug(args ...any) {
-	l.log(zapcore.DebugLevel, fmt.Sprint(args...))
+func Trace() *zerolog.Event { return log.Trace() }
+func Debug() *zerolog.Event { return log.Debug() }
+func Info() *zerolog.Event  { return log.Info() }
+func Warn() *zerolog.Event  { return log.Warn() }
+func Error() *zerolog.Event { return log.Error() }
+func Fatal() *zerolog.Event { return log.Fatal() }
+func Panic() *zerolog.Event { return log.Panic() }
+
+//
+// ---------- Structured logging ----------
+
+// WithFields logs map as fields (on Info level)
+func WithFields(fields map[string]any) *zerolog.Event {
+	e := log.Info()
+	for k, v := range fields {
+		e = e.Interface(k, v)
+	}
+	return e
 }
 
-func (l *wrappedLogger) Debugw(msg string, kvs ...any) {
-	l.log(zapcore.DebugLevel, msg, kvs...)
+// WithFieldsAt logs map as fields at given level
+func WithFieldsAt(level string, fields map[string]any) *zerolog.Event {
+	var e *zerolog.Event
+	switch strings.ToLower(level) {
+	case "trace":
+		e = log.Trace()
+	case "debug":
+		e = log.Debug()
+	case "warn":
+		e = log.Warn()
+	case "error":
+		e = log.Error()
+	case "fatal":
+		e = log.Fatal()
+	case "panic":
+		e = log.Panic()
+	default:
+		e = log.Info()
+	}
+	for k, v := range fields {
+		e = e.Interface(k, v)
+	}
+	return e
 }
 
-func (l *wrappedLogger) Info(args ...any) {
-	l.log(zapcore.InfoLevel, fmt.Sprint(args...))
+//
+// ---------- Context integration ----------
+
+type ctxKey struct{}
+
+var loggerKey ctxKey = struct{}{}
+
+// From extracts logger from context, or returns global logger
+func From(ctx context.Context) *zerolog.Logger {
+	if logger, ok := ctx.Value(loggerKey).(*zerolog.Logger); ok {
+		return logger
+	}
+	return &log.Logger
 }
 
-func (l *wrappedLogger) Infow(msg string, kvs ...any) {
-	l.log(zapcore.InfoLevel, msg, kvs...)
-}
-
-func (l *wrappedLogger) Warn(args ...any) {
-	l.log(zapcore.WarnLevel, fmt.Sprint(args...))
-}
-
-func (l *wrappedLogger) Warnw(msg string, kvs ...any) {
-	l.log(zapcore.WarnLevel, msg, kvs...)
-}
-
-func (l *wrappedLogger) Error(args ...any) {
-	l.log(zapcore.ErrorLevel, fmt.Sprint(args...))
-}
-
-func (l *wrappedLogger) Errorw(msg string, kvs ...any) {
-	l.log(zapcore.ErrorLevel, msg, kvs...)
+// WithLogger injects logger into context
+func WithLogger(ctx context.Context, logger *zerolog.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey, logger)
 }

@@ -14,29 +14,28 @@ import (
 )
 
 func main() {
-	log, _ := x_log.NewLogger()
-
 	force := len(os.Args) > 1 && strings.EqualFold(os.Args[1], "--force")
 
 	// Load config
 	data, err := os.ReadFile("_data/cfg/runn.config.json")
 	if err != nil {
-		log.Errorw("failed to read config", "file", "runn.config.json", "err", err)
+		x_log.Error().Err(err).Str("file", "runn.config.json").Msg("failed to read config")
 		os.Exit(1)
 	}
 
 	var cfg runn_cfg.RunnConfig
+	x_log.InitWithConfig(&cfg.Logger, "runn")
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Errorw("failed to parse config", "err", err)
+		x_log.Error().Err(err).Msg("failed to parse config")
 		os.Exit(1)
 	}
 
-	log.Infow("config loaded", "services", len(cfg.Services))
+	x_log.Info().Int("services", len(cfg.Services)).Msg("config loaded")
 
 	// Resolve startup order
 	ordered, err := runn_cfg.ResolveStartupOrder(cfg)
 	if err != nil {
-		log.Errorw("dependency resolution failed", "err", err)
+		x_log.Error().Err(err).Msg("dependency resolution failed")
 		os.Exit(1)
 	}
 
@@ -53,7 +52,7 @@ func main() {
 
 	// Handle --force (stop all previously started services)
 	if force {
-		log.Infow("--force mode: stopping all previously running services")
+		x_log.Info().Msg("--force mode: stopping all previously running services")
 		_ = client.StopAllServices(context.Background())
 	}
 
@@ -64,14 +63,14 @@ func main() {
 		}
 
 		if prev, ok := active[svc.Name]; ok && !force {
-			log.Infow("already running, skipping", "name", svc.Name, "pid", prev.Pid)
+			x_log.Info().Str("name", svc.Name).Int("pid", prev.Pid).Msg("already running, skipping")
 			continue
 		}
 
 		if err := client.StartService(context.Background(), svc.Name); err != nil {
-			log.Errorw("failed to start service", "name", svc.Name, "err", err)
+			x_log.Error().Err(err).Str("name", svc.Name).Msg("failed to start service")
 		} else {
-			log.Infow("service started", "name", svc.Name)
+			x_log.Info().Str("name", svc.Name).Msg("service started")
 		}
 	}
 
@@ -79,10 +78,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	log.Infow("runn active — press Ctrl+C to stop")
+	x_log.Info().Msg("runn active — press Ctrl+C to stop")
 	<-ctx.Done()
 
-	log.Infow("shutting down all services")
+	x_log.Info().Msg("shutting down all services")
 	_ = client.StopAllServices(context.Background())
-	log.Infow("done")
+	x_log.Info().Msg("done")
 }

@@ -2,6 +2,8 @@ package core
 
 import (
 	"fmt"
+
+	"github.com/rskv-p/mini/pkg/x_log"
 )
 
 // Group defines a namespace for endpoints.
@@ -39,15 +41,13 @@ func (g *group) AddGroup(name string, opts ...GroupOpt) Group {
 
 	prefix := joinParts(parts)
 
-	if g.service.Logger != nil {
-		g.service.Logger.Infow("created group",
-			"parent", g.prefix,
-			"name", name,
-			"prefix", prefix,
-			"queue_group", qg,
-			"queue_disabled", noQ,
-		)
-	}
+	// Логирование через глобальный логгер x_log
+	x_log.Info().Str("parent", g.prefix).
+		Str("name", name).
+		Str("prefix", prefix).
+		Str("queue_group", qg).
+		Bool("queue_disabled", noQ).
+		Msg("created group")
 
 	return &group{
 		service:            g.service,
@@ -60,16 +60,11 @@ func (g *group) AddGroup(name string, opts ...GroupOpt) Group {
 // AddEndpoint registers a new endpoint with group prefix.
 func (g *group) AddEndpoint(name string, handler Handler, opts ...EndpointOpt) error {
 	var options endpointOpts
-	options.logger = g.service.Logger // проброс логгера
 
 	for _, opt := range opts {
 		if err := opt(&options); err != nil {
-			if g.service.Logger != nil {
-				g.service.Logger.Errorw("invalid endpoint option",
-					"name", name,
-					"err", err,
-				)
-			}
+			x_log.Error().Str("name", name).Err(err).
+				Msg("invalid endpoint option")
 			return err
 		}
 	}
@@ -89,15 +84,13 @@ func (g *group) AddEndpoint(name string, handler Handler, opts ...EndpointOpt) e
 		options.qgDisabled, g.queueGroupDisabled,
 	)
 
-	if g.service.Logger != nil {
-		g.service.Logger.Infow("adding endpoint to group",
-			"name", name,
-			"subject", endpointSubject,
-			"queue_group", qg,
-			"queue_disabled", noQ,
-			"group_prefix", g.prefix,
-		)
-	}
+	// Логирование через глобальный логгер x_log
+	x_log.Info().Str("name", name).
+		Str("subject", endpointSubject).
+		Str("queue_group", qg).
+		Bool("queue_disabled", noQ).
+		Str("group_prefix", g.prefix).
+		Msg("adding endpoint to group")
 
-	return addEndpoint(g.service, name, endpointSubject, handler, options.metadata, qg, noQ, options.logger)
+	return addEndpoint(g.service, name, endpointSubject, handler, options.metadata, qg, noQ)
 }

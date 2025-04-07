@@ -9,31 +9,26 @@ import (
 // asyncCallbacksHandler manages async callback queue.
 type asyncCallbacksHandler struct {
 	cbQueue chan func() // Queue of callbacks
-	logger  x_log.Logger
-
-	mu     sync.Mutex // Mutex for synchronization
-	closed bool       // Indicates if handler is closed
+	closed  bool        // Indicates if handler is closed
+	mu      sync.Mutex  // Mutex for synchronization
 }
 
 // run starts executing callbacks from the queue.
 func (ac *asyncCallbacksHandler) run() {
-	if ac.logger != nil {
-		ac.logger.Debug("async callback loop started") // Log callback loop start
-	}
+	// Log callback loop start using global logger
+	x_log.Debug().Msg("async callback loop started")
 
 	for fn := range ac.cbQueue { // Process each callback in queue
 		if fn == nil {
-			if ac.logger != nil {
-				ac.logger.Warn("nil callback received") // Log if nil callback
-			}
+			// Log if nil callback received
+			x_log.Warn().Msg("nil callback received")
 			continue
 		}
 		fn() // Execute callback
 	}
 
-	if ac.logger != nil {
-		ac.logger.Debug("async callback queue closed") // Log queue closure
-	}
+	// Log queue closure
+	x_log.Debug().Msg("async callback queue closed")
 }
 
 // push adds a callback to the queue.
@@ -42,9 +37,7 @@ func (ac *asyncCallbacksHandler) push(f func()) {
 	defer ac.mu.Unlock()
 
 	if ac.closed { // Warn if attempting to push after close
-		if ac.logger != nil {
-			ac.logger.Warn("async push attempted after close")
-		}
+		x_log.Warn().Msg("async push attempted after close")
 		return
 	}
 
@@ -57,16 +50,13 @@ func (ac *asyncCallbacksHandler) close() {
 	defer ac.mu.Unlock()
 
 	if ac.closed { // Log if close is called multiple times
-		if ac.logger != nil {
-			ac.logger.Debug("async close called multiple times")
-		}
+		x_log.Debug().Msg("async close called multiple times")
 		return
 	}
 
 	close(ac.cbQueue) // Close the callback queue
 	ac.closed = true
 
-	if ac.logger != nil {
-		ac.logger.Debug("async callback dispatcher closed") // Log dispatcher close
-	}
+	// Log dispatcher close
+	x_log.Debug().Msg("async callback dispatcher closed")
 }

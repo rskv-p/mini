@@ -1,8 +1,21 @@
 {
+  "Logger": {
+    "Level": "info",
+    "LogFile": "_data/log/runn.log",
+    "ToConsole": false,
+    "ToFile": true,
+    "ColoredFile": false,
+    "Style": "dark",
+    "MaxSize": 10,
+    "MaxBackups": 5,
+    "MaxAge": 7,
+    "Compress": true
+  },
+
   "services": [
     {
       "name": "s_nats",
-      "path": "./servs/s_nats/main",
+      "path": "_data/bin/s_nats",
       "args": [],
       "auto_restart": true
     }

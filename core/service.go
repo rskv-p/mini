@@ -10,6 +10,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nuid"
+	"github.com/rskv-p/mini/pkg/x_log"
 )
 
 // Service defines the microservice interface.
@@ -111,14 +112,12 @@ func (s *service) Start() error {
 			if s.OnError != nil {
 				s.OnError(s, err)
 			}
-			if s.Logger != nil {
-				s.Logger.Errorw("failed to add default endpoint", "err", err)
-			}
+			// Log error using global logger
+			x_log.Error().Err(err).Msg("failed to add default endpoint")
 			return err
 		}
-		if s.Logger != nil {
-			s.Logger.Infow("default endpoint registered", "subject", s.Config.Endpoint.Subject)
-		}
+		// Log successful registration using global logger
+		x_log.Info().Str("subject", s.Config.Endpoint.Subject).Msg("default endpoint registered")
 	}
 
 	pingResp := Ping{
@@ -138,9 +137,8 @@ func (s *service) Start() error {
 				if s.OnError != nil {
 					s.OnError(s, err)
 				}
-				if s.Logger != nil {
-					s.Logger.Errorw("error responding to verb", "verb", verb.String(), "err", err)
-				}
+				// Log error using global logger
+				x_log.Error().Str("verb", verb.String()).Err(err).Msg("error responding to verb")
 			}
 		}
 	}
@@ -157,9 +155,8 @@ func (s *service) Start() error {
 			if s.OnError != nil {
 				s.OnError(s, err)
 			}
-			if s.Logger != nil {
-				s.Logger.Errorw("failed to register verb", "verb", verb.String(), "err", err)
-			}
+			// Log error using global logger
+			x_log.Error().Err(err).Msg("failed to register verb")
 			return err
 		}
 	}
@@ -170,14 +167,9 @@ func (s *service) Start() error {
 		s.OnStart(s)
 	}
 
-	if s.Logger != nil {
-		s.Logger.Infow("service started",
-			"name", s.Config.Name,
-			"version", s.Config.Version,
-			"id", s.id,
-			"endpoints", len(s.endpoints),
-		)
-	}
+	// Log service start using global logger
+	x_log.Info().Str("name", s.Config.Name).Str("version", s.Config.Version).Str("id", s.id).
+		Int("endpoints", len(s.endpoints)).Msg("service started")
 
 	return nil
 }
@@ -216,9 +208,8 @@ func (s *service) AddGroup(name string, opts ...GroupOpt) Group {
 		opt(&o)
 	}
 	qg, noQ := resolveQueueGroup(o.queueGroup, s.Config.QueueGroup, o.qgDisabled, s.Config.QueueGroupDisabled)
-	if s.Logger != nil {
-		s.Logger.Info("created endpoint group %q", name)
-	}
+	// Log group creation using global logger
+	x_log.Info().Str("group", name).Str("queue_group", qg).Bool("queue_disabled", noQ).Msg("created endpoint group")
 	return &group{
 		service:            s,
 		prefix:             name,
@@ -253,19 +244,14 @@ func (s *service) addInternalHandler(nc *nats.Conn, verb Verb, kind, id, name st
 		if s.OnError != nil {
 			s.OnError(s, err)
 		}
-		if s.Logger != nil {
-			s.Logger.Errorw("failed to generate control subject",
-				"verb", verb.String(),
-				"err", err,
-			)
-		}
+		// Log error using global logger
+		x_log.Error().Str("verb", verb.String()).Err(err).Msg("failed to generate control subject")
 		return err
 	}
 
 	s.verbSubs[name], err = nc.Subscribe(subj, func(msg *nats.Msg) {
 		handler(&request{
-			msg:    msg,
-			logger: s.Logger,
+			msg: msg,
 		})
 	})
 	if err != nil {
@@ -273,26 +259,17 @@ func (s *service) addInternalHandler(nc *nats.Conn, verb Verb, kind, id, name st
 		if s.OnError != nil {
 			s.OnError(s, err)
 		}
-		if s.Logger != nil {
-			s.Logger.Errorw("failed to subscribe",
-				"subject", subj,
-				"err", err,
-			)
-		}
+		// Log error using global logger
+		x_log.Error().Str("subject", subj).Err(err).Msg("failed to subscribe")
 		return err
 	}
 
-	if s.Logger != nil {
-		s.Logger.Infow("subscribed to control subject",
-			"subject", subj,
-			"verb", verb.String(),
-		)
-	}
+	// Log subscription using global logger
+	x_log.Info().Str("subject", subj).Str("verb", verb.String()).Msg("subscribed to control subject")
 
 	return nil
 }
 
-// Stop gracefully stops the service and drains subscriptions.
 // Stop gracefully stops the service and drains subscriptions.
 func (s *service) Stop() error {
 	s.m.Lock()
@@ -309,13 +286,8 @@ func (s *service) Stop() error {
 			if s.OnError != nil {
 				s.OnError(s, err)
 			}
-			if s.Logger != nil {
-				s.Logger.Errorw("failed to stop endpoint",
-					"name", e.Name,
-					"subject", e.Subject,
-					"err", err,
-				)
-			}
+			// Log error using global logger
+			x_log.Error().Str("name", e.Name).Str("subject", e.Subject).Err(err).Msg("failed to stop endpoint")
 			return err
 		}
 	}
@@ -327,18 +299,13 @@ func (s *service) Stop() error {
 				if s.OnError != nil {
 					s.OnError(s, err)
 				}
-				if s.Logger != nil {
-					s.Logger.Errorw("failed to drain subscription",
-						"subject", sub.Subject,
-						"err", err,
-					)
-				}
+				// Log error using global logger
+				x_log.Error().Str("subject", sub.Subject).Err(err).Msg("failed to drain subscription")
 				return fmt.Errorf("draining %q: %w", sub.Subject, err)
 			}
-		} else if s.Logger != nil {
-			s.Logger.Warnw("skipping drain, conn closed or subscription invalid",
-				"subject", sub.Subject,
-			)
+		} else {
+			// Log skipping drain using global logger
+			x_log.Warn().Str("subject", sub.Subject).Msg("skipping drain, conn closed or subscription invalid")
 		}
 		delete(s.verbSubs, key)
 	}
@@ -346,10 +313,8 @@ func (s *service) Stop() error {
 	// Unwrap any wrapped connection callbacks
 	unwrapConnectionEventCallbacks(s.nc, s.natsHandlers)
 
-	// Log shutdown
-	if s.Logger != nil {
-		s.Logger.Info("service %q stopped", s.Config.Name)
-	}
+	// Log shutdown using global logger
+	x_log.Info().Str("service", s.Config.Name).Msg("service stopped")
 
 	// Fire lifecycle hook
 	if s.OnStop != nil {

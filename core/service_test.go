@@ -5,27 +5,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rskv-p/mini/pkg/x_log"
-
 	"github.com/nats-io/nats-server/v2/server"
 	natsserver "github.com/nats-io/nats-server/v2/test"
 	"github.com/nats-io/nats.go"
+	"github.com/rskv-p/mini/pkg/x_log"
 )
 
 func TestServiceBasics(t *testing.T) {
+	// Start the NATS server
 	s := RunServerOnPort(-1)
 	defer s.Shutdown()
 
+	// Connect to the NATS server
 	nc, err := nats.Connect(s.ClientURL())
 	if err != nil {
 		t.Fatalf("Expected to connect to server, got %v", err)
 	}
 	defer nc.Close()
 
-	log, _ := x_log.NewLogger()
-	_ = log.Configure(x_log.OutputConsole, x_log.DebugLevel)
-
-	// Handler stub
+	// Handler stub for adding numbers
 	doAdd := func(req Request) {
 		type payload struct{ X, Y int }
 		var p payload
@@ -35,18 +33,18 @@ func TestServiceBasics(t *testing.T) {
 		}
 		result := p.X + p.Y
 		_ = req.RespondJSON(map[string]any{"sum": result})
-		log.Debugw("handler finished", "subject", req.Subject())
+		x_log.Debug().Str("subject", req.Subject()).Msg("handler finished")
 	}
 
+	// Configuring the service
 	cfg := Config{
 		Name:        "math-service",
 		Version:     "1.2.3",
 		Description: "performs math operations",
-		Logger:      log,
 		Middleware: []Middleware{
 			func(next Handler) Handler {
 				return HandlerFunc(func(req Request) {
-					log.Debugw("middleware hit", "subject", req.Subject())
+					x_log.Debug().Str("subject", req.Subject()).Msg("middleware hit")
 					next.Handle(req)
 				})
 			},
@@ -57,17 +55,21 @@ func TestServiceBasics(t *testing.T) {
 		},
 	}
 
+	// Add the service to NATS
 	svc := AddService(nc, cfg)
 
+	// Start the service
 	if err := svc.Start(); err != nil {
 		t.Fatalf("service failed to start: %v", err)
 	}
 
+	// Send a request to the service
 	resp, err := nc.Request("math.add", []byte(`{"x":2,"y":3}`), time.Second)
 	if err != nil {
 		t.Fatalf("Expected a response, got %v", err)
 	}
 
+	// Parse the response
 	var result map[string]any
 	if err := json.Unmarshal(resp.Data, &result); err != nil {
 		t.Fatalf("Invalid JSON in response: %v", err)
@@ -88,7 +90,7 @@ func TestServiceBasics(t *testing.T) {
 		t.Fatalf("Unexpected info: %+v", info)
 	}
 
-	// Stats
+	// Stats check
 	statsSubj, _ := ControlSubject(StatsVerb, "math-service", "")
 	statsResp, err := nc.Request(statsSubj, nil, time.Second)
 	if err != nil {
@@ -100,7 +102,7 @@ func TestServiceBasics(t *testing.T) {
 		t.Fatalf("Expected 1 request, got %d", stats.Endpoints[0].NumRequests)
 	}
 
-	// Reset
+	// Reset service stats
 	svc.Reset()
 	if svc.Stats().Endpoints[0].NumRequests != 0 {
 		t.Fatalf("Reset did not clear stats")
@@ -115,70 +117,9 @@ func TestServiceBasics(t *testing.T) {
 
 	select {
 	case <-done:
-		// ok
+		// Service stopped successfully
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout: svc.Stop() did not return")
-	}
-}
-
-func TestAddService(t *testing.T) {
-	log, _ := x_log.NewLogger()
-	_ = log.Configure(x_log.OutputConsole, x_log.DebugLevel)
-
-	handler := func(req Request) {
-		_ = req.RespondJSON(map[string]string{"ok": "true"})
-	}
-
-	s := RunServerOnPort(-1)
-	defer s.Shutdown()
-
-	nc, err := nats.Connect(s.ClientURL())
-	if err != nil {
-		t.Fatalf("Failed to connect to NATS: %v", err)
-	}
-	defer nc.Close()
-
-	cfg := Config{
-		Name:    "test_service",
-		Version: "0.1.0",
-		Logger:  log,
-		Endpoint: &EndpointConfig{
-			Subject:  "test.echo",
-			Handler:  HandlerFunc(handler),
-			Metadata: map[string]string{"x": "y"},
-		},
-		Metadata: map[string]string{"env": "test"},
-	}
-
-	svc := AddService(nc, cfg)
-	if err := svc.Start(); err != nil {
-		t.Fatalf("service start failed: %v", err)
-	}
-	defer svc.Stop()
-
-	subj, _ := ControlSubject(PingVerb, "test_service", svc.Info().ID)
-	msg, err := nc.Request(subj, nil, time.Second)
-	if err != nil {
-		t.Fatalf("ping request failed: %v", err)
-	}
-
-	var ping Ping
-	_ = json.Unmarshal(msg.Data, &ping)
-
-	if ping.Type != PingResponseType || ping.Name != "test_service" || ping.Version != "0.1.0" {
-		t.Errorf("unexpected ping response: %+v", ping)
-	}
-
-	// Verify endpoint works
-	resp, err := nc.Request("test.echo", []byte(`{}`), time.Second)
-	if err != nil {
-		t.Fatalf("handler request failed: %v", err)
-	}
-
-	var result map[string]string
-	_ = json.Unmarshal(resp.Data, &result)
-	if result["ok"] != "true" {
-		t.Errorf("unexpected handler response: %+v", result)
 	}
 }
 

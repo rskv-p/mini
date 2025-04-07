@@ -3,6 +3,8 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/rskv-p/mini/pkg/x_log"
 )
 
 type Validator interface {
@@ -13,16 +15,14 @@ type Validator interface {
 func (s *service) DecodeAndValidate(req *request, v any) error {
 	raw := req.Data()
 	if err := json.Unmarshal(raw, v); err != nil { // Check if JSON is valid
-		if s.Logger != nil {
-			s.Logger.Errorw("invalid JSON", "err", err, "raw", string(raw)) // Log error
-		}
+		// Log invalid JSON using global logger
+		x_log.Error().Err(err).Str("raw", string(raw)).Msg("invalid JSON")
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	if s.Validator != nil { // Validate if a validator is set
 		if err := s.Validator.Validate(v); err != nil {
-			if s.Logger != nil {
-				s.Logger.Warnw("validation failed", "err", err, "raw", string(raw)) // Log validation failure
-			}
+			// Log validation failure using global logger
+			x_log.Warn().Err(err).Str("raw", string(raw)).Msg("validation failed")
 			return fmt.Errorf("validation failed: %w", err)
 		}
 	}
@@ -37,9 +37,8 @@ func ValidateJSON[T any](s Service) Middleware {
 			r, ok := req.(*request)
 			if !ok { // Check if request is of type *request
 				_ = req.Error("500", "internal error", nil)
-				if s.(*service).Logger != nil {
-					s.(*service).Logger.Errorw("invalid request type (not *request)", "actual", fmt.Sprintf("%T", req)) // Log type error
-				}
+				// Log invalid request type using global logger
+				x_log.Error().Str("actual", fmt.Sprintf("%T", req)).Msg("invalid request type (not *request)")
 				return
 			}
 			if err := s.(*service).DecodeAndValidate(r, &v); err != nil { // Decode and validate

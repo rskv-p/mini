@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/rskv-p/mini/pkg/x_log"
 	"github.com/rskv-p/mini/servs/s_nats/nats_cfg"
 	"github.com/rskv-p/mini/servs/s_nats/nats_serv"
 )
@@ -18,6 +19,8 @@ func main() {
 	}
 
 	var cfg nats_cfg.NatsConfig
+	x_log.InitWithConfig(&cfg.Logger, "nats")
+
 	if err := json.Unmarshal(cfgData, &cfg); err != nil {
 		panic("invalid config.json: " + err.Error())
 	}

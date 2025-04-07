@@ -1,9 +1,15 @@
 package runn_cfg
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/rskv-p/mini/pkg/x_log"
+)
 
 type RunnConfig struct {
 	Services []ServiceConfig `json:"services"` // List of services to launch
+	Logger   x_log.Config    `json:"Logger"`   // Logger configuration
+
 }
 
 type ServiceConfig struct {

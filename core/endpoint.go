@@ -3,10 +3,10 @@ package core
 import (
 	"errors"
 	"fmt"
-
-	"github.com/rskv-p/mini/pkg/x_log"
+	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/rskv-p/mini/pkg/x_log"
 )
 
 // Endpoint represents a registered service endpoint.
@@ -19,7 +19,6 @@ type Endpoint struct {
 	// JetStream
 	useJetStream bool
 	jsConsumer   *nats.ConsumerConfig
-	Logger       x_log.Logger
 }
 
 // EndpointConfig holds configuration for an endpoint.
@@ -57,20 +56,15 @@ type endpointOpts struct {
 	handler      Handler // Handler to wrap with middleware
 	useJetStream bool
 	jsConsumer   *nats.ConsumerConfig
-	logger       x_log.Logger // ← добавили
-
 }
 
 func (s *service) AddEndpoint(name string, handler Handler, opts ...EndpointOpt) error {
 	var options endpointOpts
 	options.handler = handler
-	options.logger = s.Logger // ← проброс логгера в опции
 
 	for _, opt := range opts {
 		if err := opt(&options); err != nil {
-			if s.Logger != nil {
-				s.Logger.Errorw("failed to apply endpoint option", "name", name, "err", err)
-			}
+			x_log.Error().Str("name", name).Err(err).Msg("failed to apply endpoint option")
 			return err
 		}
 	}
@@ -87,31 +81,24 @@ func (s *service) AddEndpoint(name string, handler Handler, opts ...EndpointOpt)
 		s.Config.QueueGroupDisabled,
 	)
 
-	if s.Logger != nil {
-		s.Logger.Infow("adding endpoint",
-			"name", name,
-			"subject", subject,
-			"queue_group", queueGroup,
-			"queue_disabled", noQueue,
-			"jetstream", options.useJetStream,
-			"disabled", options.disabled,
-		)
-	}
+	x_log.Info().Str("name", name).
+		Str("subject", subject).
+		Str("queue_group", queueGroup).
+		Bool("queue_disabled", noQueue).
+		Bool("jetstream", options.useJetStream).
+		Bool("disabled", options.disabled).
+		Msg("adding endpoint")
 
 	s.m.Lock()
 	defer s.m.Unlock()
 
 	for _, ep := range s.endpoints {
 		if ep.Name == name {
-			if s.Logger != nil {
-				s.Logger.Errorw("duplicate endpoint name", "name", name)
-			}
+			x_log.Error().Str("name", name).Msg("duplicate endpoint name")
 			return fmt.Errorf("%w: duplicate endpoint name %q", ErrConfigValidation, name)
 		}
 		if ep.Subject == subject {
-			if s.Logger != nil {
-				s.Logger.Errorw("duplicate endpoint subject", "subject", subject)
-			}
+			x_log.Error().Str("subject", subject).Msg("duplicate endpoint subject")
 			return fmt.Errorf("%w: duplicate endpoint subject %q", ErrConfigValidation, subject)
 		}
 	}
@@ -126,7 +113,6 @@ func (s *service) AddEndpoint(name string, handler Handler, opts ...EndpointOpt)
 		Name:         name,
 		useJetStream: options.useJetStream,
 		jsConsumer:   options.jsConsumer,
-		Logger:       s.Logger,
 		EndpointConfig: EndpointConfig{
 			Subject:            subject,
 			Handler:            finalHandler,
@@ -140,24 +126,18 @@ func (s *service) AddEndpoint(name string, handler Handler, opts ...EndpointOpt)
 
 	if ep.Disabled {
 		s.endpoints = append(s.endpoints, ep)
-		if s.Logger != nil {
-			s.Logger.Infow("endpoint is disabled, skipping subscription", "name", ep.Name, "subject", ep.Subject)
-		}
+		x_log.Info().Str("name", ep.Name).Str("subject", ep.Subject).Msg("endpoint is disabled, skipping subscription")
 		return nil
 	}
 
 	if err := s.subscribeEndpoint(ep); err != nil {
-		if s.Logger != nil {
-			s.Logger.Errorw("failed to subscribe endpoint", "name", ep.Name, "subject", ep.Subject, "err", err)
-		}
+		x_log.Error().Str("name", ep.Name).Str("subject", ep.Subject).Err(err).Msg("failed to subscribe endpoint")
 		return err
 	}
 
 	s.endpoints = append(s.endpoints, ep)
 
-	if s.Logger != nil {
-		s.Logger.Infow("endpoint subscribed", "name", ep.Name, "subject", ep.Subject)
-	}
+	x_log.Info().Str("name", ep.Name).Str("subject", ep.Subject).Msg("endpoint subscribed")
 
 	return nil
 }
@@ -171,25 +151,18 @@ func addEndpoint(
 	metadata map[string]string,
 	queueGroup string,
 	noQueue bool,
-	logger x_log.Logger,
 ) error {
 	// validation with logging
 	if !nameRegexp.MatchString(name) {
-		if logger != nil {
-			logger.Errorw("invalid endpoint name", "name", name)
-		}
+		x_log.Error().Str("name", name).Msg("invalid endpoint name")
 		return fmt.Errorf("%w: invalid endpoint name", ErrConfigValidation)
 	}
 	if !subjectRegexp.MatchString(subject) {
-		if logger != nil {
-			logger.Errorw("invalid endpoint subject", "subject", subject)
-		}
+		x_log.Error().Str("subject", subject).Msg("invalid endpoint subject")
 		return fmt.Errorf("%w: invalid endpoint subject", ErrConfigValidation)
 	}
 	if queueGroup != "" && !subjectRegexp.MatchString(queueGroup) {
-		if logger != nil {
-			logger.Errorw("invalid queue group", "queue_group", queueGroup)
-		}
+		x_log.Error().Str("queue_group", queueGroup).Msg("invalid queue group")
 		return fmt.Errorf("%w: invalid queue group", ErrConfigValidation)
 	}
 
@@ -207,8 +180,7 @@ func addEndpoint(
 
 	cb := func(m *nats.Msg) {
 		s.reqHandler(endpoint, &request{
-			msg:    m,
-			logger: logger,
+			msg: m,
 		})
 	}
 
@@ -224,14 +196,7 @@ func addEndpoint(
 	}
 
 	if err != nil {
-		if logger != nil {
-			logger.Errorw("failed to subscribe to endpoint",
-				"name", name,
-				"subject", subject,
-				"queue_group", queueGroup,
-				"err", err,
-			)
-		}
+		x_log.Error().Str("name", name).Str("subject", subject).Str("queue_group", queueGroup).Err(err).Msg("failed to subscribe to endpoint")
 		return err
 	}
 
@@ -243,13 +208,7 @@ func addEndpoint(
 	}
 	s.endpoints = append(s.endpoints, endpoint)
 
-	if logger != nil {
-		logger.Infow("endpoint successfully subscribed",
-			"name", name,
-			"subject", subject,
-			"queue_group", queueGroup,
-		)
-	}
+	x_log.Info().Str("name", name).Str("subject", subject).Str("queue_group", queueGroup).Msg("endpoint successfully subscribed")
 
 	return nil
 }
@@ -260,39 +219,20 @@ func (e *Endpoint) stop() error {
 
 	// Handle nil subscription gracefully
 	if e.subscription == nil {
-		if s.Logger != nil {
-			s.Logger.Warnw("stop called on endpoint with no active subscription",
-				"name", e.Name,
-				"subject", e.Subject,
-			)
-		}
+		x_log.Warn().Str("name", e.Name).Str("subject", e.Subject).Msg("stop called on endpoint with no active subscription")
 		return nil
 	}
 
-	if s.Logger != nil {
-		s.Logger.Infow("stopping endpoint",
-			"name", e.Name,
-			"subject", e.Subject,
-		)
-	}
+	x_log.Info().Str("name", e.Name).Str("subject", e.Subject).Msg("stopping endpoint")
 
 	// Skip drain if conn is closed or subscription invalid
 	if e.subscription.IsValid() && s.nc != nil && !s.nc.IsClosed() {
 		if err := e.subscription.Drain(); err != nil && !errors.Is(err, nats.ErrConnectionClosed) {
-			if s.Logger != nil {
-				s.Logger.Errorw("failed to drain endpoint",
-					"name", e.Name,
-					"subject", e.Subject,
-					"err", err,
-				)
-			}
+			x_log.Error().Str("name", e.Name).Str("subject", e.Subject).Err(err).Msg("failed to drain endpoint")
 			return fmt.Errorf("draining %q: %w", e.Subject, err)
 		}
-	} else if s.Logger != nil {
-		s.Logger.Warnw("skipping drain, conn closed or sub invalid",
-			"name", e.Name,
-			"subject", e.Subject,
-		)
+	} else {
+		x_log.Warn().Str("name", e.Name).Str("subject", e.Subject).Msg("skipping drain, conn closed or sub invalid")
 	}
 
 	// Remove endpoint from service list
@@ -305,12 +245,7 @@ func (e *Endpoint) stop() error {
 	}
 	s.m.Unlock()
 
-	if s.Logger != nil {
-		s.Logger.Infow("endpoint successfully stopped",
-			"name", e.Name,
-			"subject", e.Subject,
-		)
-	}
+	x_log.Info().Str("name", e.Name).Str("subject", e.Subject).Msg("endpoint successfully stopped")
 
 	return nil
 }
@@ -320,6 +255,168 @@ func WithEndpointSubject(subject string) EndpointOpt {
 	return func(e *endpointOpts) error {
 		e.subject = subject
 		return nil
+	}
+}
+
+// Additional methods for configuring endpoints remain unchanged...
+// subscribeEndpoint subscribes the service to the endpoint.
+func (s *service) subscribeEndpoint(ep *Endpoint) error {
+	// Валидация
+	if !nameRegexp.MatchString(ep.Name) {
+		return fmt.Errorf("%w: invalid endpoint name", ErrConfigValidation)
+	}
+	if !subjectRegexp.MatchString(ep.Subject) {
+		return fmt.Errorf("%w: invalid endpoint subject", ErrConfigValidation)
+	}
+	if ep.QueueGroup != "" && !subjectRegexp.MatchString(ep.QueueGroup) {
+		return fmt.Errorf("%w: invalid queue group", ErrConfigValidation)
+	}
+
+	// Лог: начало подписки
+	x_log.Info().Str("name", ep.Name).
+		Str("subject", ep.Subject).
+		Str("queue_group", ep.QueueGroup).
+		Bool("jetstream", ep.useJetStream).
+		Msg("subscribing to endpoint")
+
+	cb := func(m *nats.Msg) {
+		s.reqHandler(ep, &request{
+			msg: m,
+		})
+	}
+
+	var (
+		sub *nats.Subscription
+		err error
+	)
+
+	if ep.useJetStream {
+		js, jserr := s.nc.JetStream()
+		if jserr != nil {
+			x_log.Error().Err(jserr).Msg("failed to get JetStream context")
+			return jserr
+		}
+		consumer := ep.jsConsumer
+		if consumer == nil {
+			consumer = &nats.ConsumerConfig{
+				Durable:       ep.Name,
+				AckPolicy:     nats.AckExplicitPolicy,
+				DeliverPolicy: nats.DeliverAllPolicy,
+			}
+		}
+		sub, err = js.QueueSubscribe(ep.Subject, ep.QueueGroup, cb,
+			nats.ManualAck(),
+			nats.Durable(consumer.Durable),
+			nats.AckWait(consumer.AckWait),
+			nats.MaxDeliver(consumer.MaxDeliver),
+		)
+	} else {
+		if ep.QueueGroupDisabled {
+			sub, err = s.nc.Subscribe(ep.Subject, cb)
+		} else {
+			sub, err = s.nc.QueueSubscribe(ep.Subject, ep.QueueGroup, cb)
+		}
+	}
+
+	if err != nil {
+		x_log.Error().Err(err).Str("name", ep.Name).
+			Str("subject", ep.Subject).Str("queue_group", ep.QueueGroup).
+			Msg("failed to subscribe to endpoint")
+		return err
+	}
+
+	// Успешная подписка
+	ep.subscription = sub
+	ep.stats = EndpointStats{
+		Name:       ep.Name,
+		Subject:    ep.Subject,
+		QueueGroup: ep.QueueGroup,
+	}
+
+	x_log.Info().Str("name", ep.Name).
+		Str("subject", ep.Subject).
+		Bool("jetstream", ep.useJetStream).
+		Msg("subscription successful")
+
+	return nil
+}
+
+// WithEndpointAsync wraps handler in a goroutine.
+func WithEndpointAsync() EndpointOpt {
+	return func(e *endpointOpts) error {
+		if e.handler == nil {
+			return fmt.Errorf("handler is not set")
+		}
+		h := e.handler
+		e.handler = HandlerFunc(func(req Request) {
+			go h.Handle(req)
+		})
+		return nil
+	}
+}
+
+// WithJetStream enables JetStream for the endpoint.
+func WithJetStream() EndpointOpt {
+	return func(e *endpointOpts) error {
+		e.useJetStream = true
+		return nil
+	}
+}
+
+// WithJetStreamConfig sets JetStream consumer config and enables JetStream.
+// WithJetStreamConfig sets JetStream consumer config and enables JetStream.
+func WithJetStreamConfig(cfg *nats.ConsumerConfig) EndpointOpt {
+	return func(e *endpointOpts) error {
+		e.useJetStream = true
+		e.jsConsumer = cfg
+
+		if cfg != nil {
+			// Преобразуем длительность AckWait в миллисекунды (или секунды, в зависимости от предпочтений)
+			ackWaitMillis := int(cfg.AckWait / time.Millisecond)
+
+			x_log.Info().Str("durable", cfg.Durable).
+				Int("ack_wait_ms", ackWaitMillis). // Логируем AckWait в миллисекундах
+				Int("max_deliver", cfg.MaxDeliver).
+				Str("ack_policy", ackPolicyToString(cfg.AckPolicy)).
+				Str("deliver_policy", deliverPolicyToString(cfg.DeliverPolicy)).
+				Msg("JetStream config applied")
+		}
+
+		return nil
+	}
+}
+
+// ackPolicyToString converts AckPolicy to string.
+func ackPolicyToString(p nats.AckPolicy) string {
+	switch p {
+	case nats.AckNonePolicy:
+		return "none"
+	case nats.AckAllPolicy:
+		return "all"
+	case nats.AckExplicitPolicy:
+		return "explicit"
+	default:
+		return "unknown"
+	}
+}
+
+// deliverPolicyToString converts DeliverPolicy to string.
+func deliverPolicyToString(p nats.DeliverPolicy) string {
+	switch p {
+	case nats.DeliverAllPolicy:
+		return "all"
+	case nats.DeliverLastPolicy:
+		return "last"
+	case nats.DeliverNewPolicy:
+		return "new"
+	case nats.DeliverByStartSequencePolicy:
+		return "by_start_sequence"
+	case nats.DeliverByStartTimePolicy:
+		return "by_start_time"
+	case nats.DeliverLastPerSubjectPolicy:
+		return "last_per_subject"
+	default:
+		return "unknown"
 	}
 }
 
@@ -359,12 +456,12 @@ func WithEndpointDoc(fn DocFunc) EndpointOpt {
 	}
 }
 
+// WithEndpointDisabled marks an endpoint as disabled via an option.
 func WithEndpointDisabled() EndpointOpt {
 	return func(e *endpointOpts) error {
 		e.disabled = true
-		if e.logger != nil {
-			e.logger.Debugw("endpoint marked as disabled via option")
-		}
+		// Log the action using global logger
+		x_log.Debug().Msg("endpoint marked as disabled via option")
 		return nil
 	}
 }
@@ -378,185 +475,17 @@ func WithEndpointMiddleware(mw []Middleware) EndpointOpt {
 
 		originalType := fmt.Sprintf("%T", e.handler)
 
+		// Wrap the handler with middlewares
 		for i := len(mw) - 1; i >= 0; i-- {
 			e.handler = mw[i](e.handler)
 		}
 
-		if e.logger != nil {
-			e.logger.Infow("middleware applied",
-				"handler", originalType,
-				"middleware_count", len(mw),
-			)
-		}
+		// Log the middleware application using global logger
+		x_log.Info().
+			Str("handler", originalType).
+			Int("middleware_count", len(mw)).
+			Msg("middleware applied")
 
 		return nil
-	}
-}
-
-func (s *service) subscribeEndpoint(ep *Endpoint) error {
-	// валидация
-	if !nameRegexp.MatchString(ep.Name) {
-		return fmt.Errorf("%w: invalid endpoint name", ErrConfigValidation)
-	}
-	if !subjectRegexp.MatchString(ep.Subject) {
-		return fmt.Errorf("%w: invalid endpoint subject", ErrConfigValidation)
-	}
-	if ep.QueueGroup != "" && !subjectRegexp.MatchString(ep.QueueGroup) {
-		return fmt.Errorf("%w: invalid queue group", ErrConfigValidation)
-	}
-
-	// лог: начало подписки
-	if s.Logger != nil {
-		s.Logger.Infow("subscribing to endpoint",
-			"name", ep.Name,
-			"subject", ep.Subject,
-			"queue_group", ep.QueueGroup,
-			"jetstream", ep.useJetStream,
-		)
-	}
-
-	cb := func(m *nats.Msg) {
-		s.reqHandler(ep, &request{
-			msg:    m,
-			logger: s.Logger,
-		})
-	}
-
-	var (
-		sub *nats.Subscription
-		err error
-	)
-
-	if ep.useJetStream {
-		js, jserr := s.nc.JetStream()
-		if jserr != nil {
-			if s.Logger != nil {
-				s.Logger.Errorw("failed to get JetStream context", "err", jserr)
-			}
-			return jserr
-		}
-		consumer := ep.jsConsumer
-		if consumer == nil {
-			consumer = &nats.ConsumerConfig{
-				Durable:       ep.Name,
-				AckPolicy:     nats.AckExplicitPolicy,
-				DeliverPolicy: nats.DeliverAllPolicy,
-			}
-		}
-		sub, err = js.QueueSubscribe(ep.Subject, ep.QueueGroup, cb,
-			nats.ManualAck(),
-			nats.Durable(consumer.Durable),
-			nats.AckWait(consumer.AckWait),
-			nats.MaxDeliver(consumer.MaxDeliver),
-		)
-	} else {
-		if ep.QueueGroupDisabled {
-			sub, err = s.nc.Subscribe(ep.Subject, cb)
-		} else {
-			sub, err = s.nc.QueueSubscribe(ep.Subject, ep.QueueGroup, cb)
-		}
-	}
-
-	if err != nil {
-		if s.Logger != nil {
-			s.Logger.Errorw("failed to subscribe to endpoint",
-				"name", ep.Name,
-				"subject", ep.Subject,
-				"queue_group", ep.QueueGroup,
-				"err", err,
-			)
-		}
-		return err
-	}
-
-	// успешная подписка
-	ep.subscription = sub
-	ep.stats = EndpointStats{
-		Name:       ep.Name,
-		Subject:    ep.Subject,
-		QueueGroup: ep.QueueGroup,
-	}
-
-	if s.Logger != nil {
-		s.Logger.Infow("subscription successful",
-			"name", ep.Name,
-			"subject", ep.Subject,
-			"jetstream", ep.useJetStream,
-		)
-	}
-
-	return nil
-}
-
-// WithEndpointAsync wraps handler in a goroutine.
-func WithEndpointAsync() EndpointOpt {
-	return func(e *endpointOpts) error {
-		if e.handler == nil {
-			return fmt.Errorf("handler is not set")
-		}
-		h := e.handler
-		e.handler = HandlerFunc(func(req Request) {
-			go h.Handle(req)
-		})
-		return nil
-	}
-}
-
-func WithJetStream() EndpointOpt {
-	return func(e *endpointOpts) error {
-		e.useJetStream = true
-		return nil
-	}
-}
-
-// WithJetStreamConfig sets JetStream consumer config and enables JetStream.
-func WithJetStreamConfig(cfg *nats.ConsumerConfig) EndpointOpt {
-	return func(e *endpointOpts) error {
-		e.useJetStream = true
-		e.jsConsumer = cfg
-
-		if e.logger != nil && cfg != nil {
-			e.logger.Infow("JetStream config applied",
-				"durable", cfg.Durable,
-				"ack_wait", cfg.AckWait,
-				"max_deliver", cfg.MaxDeliver,
-				"ack_policy", ackPolicyToString(cfg.AckPolicy),
-				"deliver_policy", deliverPolicyToString(cfg.DeliverPolicy),
-			)
-		}
-
-		return nil
-	}
-}
-
-func ackPolicyToString(p nats.AckPolicy) string {
-	switch p {
-	case nats.AckNonePolicy:
-		return "none"
-	case nats.AckAllPolicy:
-		return "all"
-	case nats.AckExplicitPolicy:
-		return "explicit"
-	default:
-		return "unknown"
-	}
-}
-
-func deliverPolicyToString(p nats.DeliverPolicy) string {
-	switch p {
-	case nats.DeliverAllPolicy:
-		return "all"
-	case nats.DeliverLastPolicy:
-		return "last"
-	case nats.DeliverNewPolicy:
-		return "new"
-	case nats.DeliverByStartSequencePolicy:
-		return "by_start_sequence"
-	case nats.DeliverByStartTimePolicy:
-		return "by_start_time"
-	case nats.DeliverLastPerSubjectPolicy:
-		return "last_per_subject"
-	default:
-		return "unknown"
 	}
 }
