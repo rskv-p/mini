@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rskv-p/mini/act"
+	"github.com/rskv-p/mini/mod"
 	"github.com/rskv-p/mini/pkg/x_db"
 	"github.com/rskv-p/mini/typ"
 )
@@ -33,8 +34,10 @@ func (m *DBModule) Name() string {
 	return m.Module.Name()
 }
 
-// Start starts the module (can add specific startup logic if needed).
-func (s *DBModule) Start() error {
+// Start starts the module (specific startup logic can be added).
+func (m *DBModule) Start() error {
+	// Log the start action
+	m.logClient.Info("Starting DB module", map[string]interface{}{"module": m.Name()})
 	return nil
 }
 
@@ -187,4 +190,29 @@ func (m *DBModule) AddModel(model interface{}) {
 	}
 	m.Tables = append(m.Tables, model)
 	m.logClient.Info("Added model", map[string]interface{}{"model": model})
+}
+
+//---------------------
+// Module Creation
+//---------------------
+
+// NewDBModule creates a new instance of DBModule and initializes it.
+func NewDBModule(service typ.IService, configClient typ.IConfigClient, logClient typ.ILogClient) *DBModule {
+	// Create a new module using NewModule, passing name, service, actions, and nil for OnInit and OnStop
+	module := mod.NewModule("db", service, nil, nil, nil)
+
+	// Create the DBModule with the created module and the clients
+	dbModule := &DBModule{
+		Module:       module,
+		ConfigClient: configClient,
+		logClient:    logClient,
+	}
+
+	// Register actions for the DB module
+	for _, action := range dbModule.Actions() {
+		act.Register(action.Name, action.Func)
+	}
+
+	// Return the created DBModule
+	return dbModule
 }

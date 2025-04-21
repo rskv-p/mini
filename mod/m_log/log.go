@@ -194,12 +194,28 @@ func NewLogModule(service typ.IService, client typ.IBusClient, configClient typ.
 // loadLogConfig loads the log configuration from the config client.
 func loadLogConfig(configClient typ.IConfigClient) *x_log.Config {
 	// Fetch the log configuration from m_cfg using IConfigClient
-	logConfig := configClient.GetConfig("log_config").(*x_log.Config)
+	logConfig := configClient.GetConfig("log_config")
+	if logConfig == nil {
+		// If the config is nil, return a default configuration
+		fmt.Println("Log configuration not found, using default configuration")
+		return &x_log.Config{
+			Level:  "DEBUG",   // Default log level
+			Format: "console", // Default log format
+		}
+	}
 
-	// Optionally, configure additional log settings based on the loaded config
-	// You can apply the settings from the logConfig object here (log level, format, etc.)
+	// Attempt to type assert the config value into the expected type
+	config, ok := logConfig.(*x_log.Config)
+	if !ok {
+		fmt.Println("Invalid log config type, using default configuration")
+		return &x_log.Config{
+			Level:  "DEBUG",   // Default log level
+			Format: "console", // Default log format
+		}
+	}
 
-	return logConfig
+	// Return the valid configuration
+	return config
 }
 
 //---------------------
