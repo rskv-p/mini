@@ -3,8 +3,6 @@ package x_req
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/rskv-p/mini/pkg/x_log"
 )
 
 //---------------------
@@ -28,26 +26,26 @@ func (r *Request) RespondJSON(v any) error {
 	// Marshal the value into JSON
 	data, err := json.Marshal(v)
 	if err != nil {
-		x_log.RootLogger().Structured().Error("failed to marshal JSON",
-			x_log.FString("subject", r.Subject),
-			x_log.FError(err),
-		)
+		// x_log.RootLogger().Structured().Error("failed to marshal JSON",
+		// 	x_log.FString("subject", r.Subject),
+		// 	x_log.FError(err),
+		// )
 		return fmt.Errorf("marshal error: %w", err)
 	}
 
 	// Send the response
 	if err := r.Respond(data); err != nil {
-		x_log.RootLogger().Structured().Error("failed to send response",
-			x_log.FString("subject", r.Subject),
-			x_log.FError(err),
-		)
+		// x_log.RootLogger().Structured().Error("failed to send response",
+		// 	x_log.FString("subject", r.Subject),
+		// 	x_log.FError(err),
+		// )
 		return err
 	}
 
 	// Log success
-	x_log.RootLogger().Structured().Info("response sent successfully",
-		x_log.FString("subject", r.Subject),
-	)
+	//	x_log.RootLogger().Structured().Info("response sent successfully",
+	//		x_log.FString("subject", r.Subject),
+	//	)
 	return nil
 }
 

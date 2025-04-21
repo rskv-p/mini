@@ -1,5 +1,5 @@
 // file:mini/pkg/x_rtm/exec/exec_test.go
-package exec_test
+package r_exec_test
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/rskv-p/mini/act"
-	"github.com/rskv-p/mini/pkg/x_rtm/exec"
+	"github.com/rskv-p/mini/pkg/x_rtm/r_exec"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestExecRuntime_Echo(t *testing.T) {
-	rt := exec.New()
+	rt := r_exec.New()
 	require.NoError(t, rt.Init())
 
 	action := act.NewAction("echo.test", context.Background(), "echo", "Hello", "World").
@@ -28,7 +28,7 @@ func TestExecRuntime_Echo(t *testing.T) {
 }
 
 func TestExecRuntime_Timeout(t *testing.T) {
-	rt := exec.New()
+	rt := r_exec.New()
 	require.NoError(t, rt.Init())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -44,7 +44,7 @@ func TestExecRuntime_Timeout(t *testing.T) {
 }
 
 func TestExecRuntime_Stop(t *testing.T) {
-	rt := exec.New()
+	rt := r_exec.New()
 	require.NoError(t, rt.Init())
 
 	action := act.NewAction("long.running", context.Background(), "sleep", "5")
@@ -68,7 +68,7 @@ func TestExecRuntime_Stop(t *testing.T) {
 }
 
 func TestExecRuntime_Stderr(t *testing.T) {
-	rt := exec.New()
+	rt := r_exec.New()
 	require.NoError(t, rt.Init())
 
 	action := act.NewAction("invalid.cmd", context.Background(), "ls", "/this/should/not/exist")
@@ -80,7 +80,7 @@ func TestExecRuntime_Stderr(t *testing.T) {
 }
 
 func TestExecRuntime_StopProcess(t *testing.T) {
-	rt := exec.New()
+	rt := r_exec.New()
 	require.NoError(t, rt.Init())
 
 	action := act.NewAction("stop.test", context.Background(), "sleep", "5")

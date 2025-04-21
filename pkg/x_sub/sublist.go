@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/rskv-p/mini/pkg/x_log"
 	"github.com/rskv-p/mini/pkg/x_tree"
 	"github.com/rskv-p/mini/typ"
 )
@@ -41,7 +40,7 @@ func (s *Sublist) Insert(sub *typ.Subscription) {
 	// Check if it's a wildcard and update the appropriate cache
 	if isWildcard(key) {
 		s.wildcardCache[key] = append(s.wildcardCache[key], sub)
-		x_log.Debug("inserted wildcard typ.Subscription", "subject", key)
+		//	x_log.Debug("inserted wildcard typ.Subscription", "subject", key)
 	} else {
 		s.exactCache[key] = append(s.exactCache[key], sub)
 
@@ -49,12 +48,12 @@ func (s *Sublist) Insert(sub *typ.Subscription) {
 		if len(s.exactCache) > s.cacheSize {
 			for k := range s.exactCache {
 				delete(s.exactCache, k)
-				x_log.Warn("evicted exact typ.Subscription from cache", "subject", k)
+				//		x_log.Warn("evicted exact typ.Subscription from cache", "subject", k)
 				break
 			}
 		}
 
-		x_log.Debug("inserted exact typ.Subscription", "subject", key)
+		//	x_log.Debug("inserted exact typ.Subscription", "subject", key)
 	}
 }
 
@@ -66,10 +65,10 @@ func (s *Sublist) Remove(sub *typ.Subscription) {
 	// Remove from the appropriate cache (exact or wildcard)
 	if isWildcard(key) {
 		delete(s.wildcardCache, key)
-		x_log.Debug("removed wildcard typ.Subscription", "subject", key)
+		//	x_log.Debug("removed wildcard typ.Subscription", "subject", key)
 	} else {
 		delete(s.exactCache, key)
-		x_log.Debug("removed exact typ.Subscription", "subject", key)
+		//	x_log.Debug("removed exact typ.Subscription", "subject", key)
 	}
 }
 
@@ -91,7 +90,7 @@ func (s *Sublist) Match(subject []byte) *SublistResult {
 	} else {
 		// Handle regular subjects
 		if subs, ok := s.exactCache[key]; ok {
-			x_log.Debug("exact cache hit", "subject", key)
+			//	x_log.Debug("exact cache hit", "subject", key)
 			res.Psubs = append(res.Psubs, subs...)
 		}
 	}
@@ -103,7 +102,7 @@ func (s *Sublist) Match(subject []byte) *SublistResult {
 		}
 	})
 
-	x_log.Debug("tree matched typ.Subscriptions", "count", len(res.Psubs), "subject", key)
+	//	x_log.Debug("tree matched typ.Subscriptions", "count", len(res.Psubs), "subject", key)
 	return res
 }
 
@@ -152,11 +151,11 @@ func NewSubjectTransform(src, dest string) (*SubjectTransform, error) {
 
 	// Check if the number of wildcards matches between source and destination
 	if countWildcards(srcTokens) != countWildcards(destTokens) {
-		x_log.Warn("wildcard count mismatch in transform", "src", src, "dest", dest)
+		//x_log.Warn("wildcard count mismatch in transform", "src", src, "dest", dest)
 		return nil, errors.New("wildcard count mismatch between src and dest")
 	}
 
-	x_log.Debug("created subject transform", "src", src, "dest", dest)
+	//	x_log.Debug("created subject transform", "src", src, "dest", dest)
 	return &SubjectTransform{
 		srcTokens:  srcTokens,
 		destTokens: destTokens,
@@ -175,7 +174,7 @@ func (st *SubjectTransform) TransformSubject(subject string) (string, error) {
 		case "*":
 			// Handle wildcard "*" by ensuring enough tokens remain
 			if i >= len(inputTokens) {
-				x_log.Error("subject too short for *", "subject", subject)
+				//		x_log.Error("subject too short for *", "subject", subject)
 				return "", errors.New("subject too short for *")
 			}
 			mapping = append(mapping, inputTokens[i])
@@ -183,7 +182,7 @@ func (st *SubjectTransform) TransformSubject(subject string) (string, error) {
 		case ">":
 			// Handle wildcard ">" by adding all remaining tokens
 			if i >= len(inputTokens) {
-				x_log.Error("no tokens available for >", "subject", subject)
+				//		x_log.Error("no tokens available for >", "subject", subject)
 				return "", errors.New("no tokens available for >")
 			}
 			mapping = append(mapping, strings.Join(inputTokens[i:], "."))
@@ -191,7 +190,7 @@ func (st *SubjectTransform) TransformSubject(subject string) (string, error) {
 		default:
 			// Ensure the current token matches the expected token
 			if i >= len(inputTokens) || token != inputTokens[i] {
-				x_log.Error("subject does not match pattern", "expected", token, "got", inputTokens[i])
+				//	x_log.Error("subject does not match pattern", "expected", token, "got", inputTokens[i])
 				return "", errors.New("subject does not match source pattern")
 			}
 			mapping = append(mapping, inputTokens[i])
@@ -206,7 +205,7 @@ func (st *SubjectTransform) TransformSubject(subject string) (string, error) {
 		if token == "*" || token == ">" {
 			// If we encounter a wildcard, fill it with values from the mapping
 			if wcIndex >= len(mapping) {
-				x_log.Error("not enough wildcards for destination", "subject", subject)
+				//		x_log.Error("not enough wildcards for destination", "subject", subject)
 				return "", errors.New("not enough wildcard values to fill destination")
 			}
 			result = append(result, mapping[wcIndex])
@@ -218,7 +217,7 @@ func (st *SubjectTransform) TransformSubject(subject string) (string, error) {
 
 	// Join the final transformed subject
 	transformed := strings.Join(result, ".")
-	x_log.Debug("transformed subject", "input", subject, "output", transformed)
+	//x_log.Debug("transformed subject", "input", subject, "output", transformed)
 	return transformed, nil
 }
 

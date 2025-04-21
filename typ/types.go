@@ -28,12 +28,9 @@ type ActionDef struct {
 type IModule interface {
 	// Name returns the name of the module
 	Name() string
-
-	// Init initializes the module
-	Init() error
-
-	// Stop stops the module
 	Stop() error
+	Start() error
+	Init() error
 
 	// Actions returns a list of actions associated with the module
 	Actions() []ActionDef
@@ -117,13 +114,13 @@ type IAction interface {
 
 // Subscription represents a subscription to a subject with an associated client and queue.
 type Subscription struct {
-	Subject []byte  // The subject to which the client is subscribed
-	Queue   []byte  // The queue associated with the subscription
-	Client  IClient // The client associated with the subscription
+	Subject []byte     // The subject to which the client is subscribed
+	Queue   []byte     // The queue associated with the subscription
+	Client  IBusClient // The client associated with the subscription
 }
 
 // NewSubscription creates a new subscription with the provided subject, queue, and client.
-func NewSubscription(subject, queue []byte, client IClient) *Subscription {
+func NewSubscription(subject, queue []byte, client IBusClient) *Subscription {
 	return &Subscription{
 		Subject: subject,
 		Queue:   queue,
@@ -132,11 +129,11 @@ func NewSubscription(subject, queue []byte, client IClient) *Subscription {
 }
 
 //---------------------
-// IClient
+// IBusClient
 //---------------------
 
-// IClient defines the behavior of a client that can subscribe, publish, and handle messages.
-type IClient interface {
+// IBusClient defines the behavior of a client that can subscribe, publish, and handle messages.
+type IBusClient interface {
 	// Subscribe subscribes the client to the specified subject
 	Subscribe(subject string) error
 
@@ -222,13 +219,13 @@ type Event struct {
 // Logging and Configuration Clients
 //---------------------
 
-// ILogClient defines methods for logging various levels of logs.
+// ILogClient defines methods for logging various levels of logs with additional context.
 type ILogClient interface {
-	Trace(message string)
-	Debug(message string)
-	Info(message string)
-	Warn(message string)
-	Error(message string)
+	Trace(message string, context map[string]interface{})
+	Debug(message string, context map[string]interface{})
+	Info(message string, context map[string]interface{})
+	Warn(message string, context map[string]interface{})
+	Error(message string, context map[string]interface{})
 }
 
 // IConfigClient defines an interface for accessing and manipulating configurations.
@@ -237,6 +234,10 @@ type IConfigClient interface {
 	SetConfig(key string, value any) error
 	DeleteConfig(key string) error
 	PublishConfig(key string, value any) error
+
+	LoadConfig(file string) error // Загружать конфигурацию для модуля
+	ReloadConfig() error          // Перезагружать конфигурацию
+
 }
 
 //---------------------
@@ -268,4 +269,13 @@ type IDBClient interface {
 
 	// Find retrieves records that match the conditions
 	Find(model interface{}, conditions ...interface{}) error
+}
+
+// IService defines the necessary methods for any service.
+type IService interface {
+	GetName() string             // Get the name of the service.
+	Start() error                // Start the service and its modules.
+	Stop() error                 // Stop the service and its modules.
+	AddModule(mod IModule) error // Add a module to the service.
+	//GetModules() []IModule
 }

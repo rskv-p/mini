@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rskv-p/mini/pkg/x_log"
 	"github.com/rskv-p/mini/pkg/x_req"
 	"github.com/rskv-p/mini/pkg/x_sub"
 
@@ -69,10 +68,10 @@ func (l *Leaf) pingLoop() {
 		select {
 		case <-ticker.C:
 			// Sending the PING message
-			x_log.RootLogger().Structured().Debug("sending PING")
+			//	x_log.RootLogger().Structured().Debug("sending PING")
 			_, err := fmt.Fprint(l.Rw, "PING\n")
 			if err != nil {
-				x_log.RootLogger().Structured().Error("failed to send PING", x_log.FError(err))
+				//	x_log.RootLogger().Structured().Error("failed to send PING", x_log.FError(err))
 				return
 			}
 			l.Rw.Flush()
@@ -111,7 +110,7 @@ func (l *Leaf) initHandlers() {
 			var err error
 			subject, err = l.Transform.TransformSubject(subject)
 			if err != nil {
-				x_log.RootLogger().Structured().Error("transform error", x_log.FError(err))
+				//	x_log.RootLogger().Structured().Error("transform error", x_log.FError(err))
 				return
 			}
 		}
@@ -134,7 +133,7 @@ func (l *Leaf) initHandlers() {
 			var err error
 			sub, err = l.Transform.TransformSubject(subject)
 			if err != nil {
-				x_log.RootLogger().Structured().Error("transform SUB error", x_log.FError(err))
+				//	x_log.RootLogger().Structured().Error("transform SUB error", x_log.FError(err))
 				return
 			}
 		}
@@ -149,7 +148,7 @@ func (l *Leaf) initHandlers() {
 			var err error
 			sub, err = l.Transform.TransformSubject(subject)
 			if err != nil {
-				x_log.RootLogger().Structured().Error("transform UNSUB error", x_log.FError(err))
+				//		x_log.RootLogger().Structured().Error("transform UNSUB error", x_log.FError(err))
 				return
 			}
 		}
@@ -163,14 +162,14 @@ func (l *Leaf) initHandlers() {
 
 // ReadLoop continuously reads incoming messages and processes commands.
 func (l *Leaf) ReadLoop() {
-	log := x_log.RootLogger().Structured()
-	log.Info("leaf read loop started")
+	// log := x_log.RootLogger().Structured()
+	// log.Info("leaf read loop started")
 
 	for {
 		line, err := l.Rw.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
-				log.Error("read error", x_log.FError(err))
+				//				log.Error("read error", x_log.FError(err))
 			}
 			break
 		}
@@ -199,7 +198,7 @@ func (l *Leaf) ReadLoop() {
 		case "RESP":
 			l.handleResponse(parts)
 		default:
-			log.Warn("Unknown command received", x_log.FString("command", parts[0]))
+			//		log.Warn("Unknown command received", x_log.FString("command", parts[0]))
 		}
 	}
 }
@@ -211,14 +210,14 @@ func (l *Leaf) handleAuth(parts []string) {
 		l.Rw.Flush()
 		return
 	}
-	claims, err := verifyJWT(parts[2], l.C.bus.secretKey)
+	_, err := verifyJWT(parts[2], l.C.bus.secretKey)
 	if err != nil {
 		l.Rw.WriteString(fmt.Sprintf("-ERR invalid token: %v\n", err))
 		l.Rw.Flush()
 		return
 	}
 
-	x_log.RootLogger().Structured().Info("auth success", x_log.FString("sub", fmt.Sprint((*claims)["sub"])))
+	//	x_log.RootLogger().Structured().Info("auth success", x_log.FString("sub", fmt.Sprint((*claims)["sub"])))
 	l.Rw.WriteString("+OK\n")
 	l.Rw.Flush()
 }
@@ -301,7 +300,7 @@ func (l *Leaf) handleResponse(parts []string) {
 func (l *Leaf) Send(subject string, msg []byte) {
 	_, err := fmt.Fprintf(l.Rw, "PUB %s %d\n", subject, len(msg))
 	if err != nil {
-		x_log.RootLogger().Structured().Error("failed to send PUB message", x_log.FError(err))
+		//	x_log.RootLogger().Structured().Error("failed to send PUB message", x_log.FError(err))
 	}
 	l.Rw.Write(msg)
 	l.Rw.Flush()
@@ -310,7 +309,7 @@ func (l *Leaf) Send(subject string, msg []byte) {
 func (l *Leaf) SendWithReply(subject string, msg []byte, reply string) {
 	_, err := fmt.Fprintf(l.Rw, "PUB %s %d\n", subject, len(msg))
 	if err != nil {
-		x_log.RootLogger().Structured().Error("failed to send PUB message with reply", x_log.FError(err))
+		//		x_log.RootLogger().Structured().Error("failed to send PUB message with reply", x_log.FError(err))
 	}
 	l.Rw.Write(msg)
 	l.Rw.Flush()
@@ -319,7 +318,7 @@ func (l *Leaf) SendWithReply(subject string, msg []byte, reply string) {
 func (l *Leaf) SendSub(subject string) {
 	_, err := fmt.Fprintf(l.Rw, "SUB %s\n", subject)
 	if err != nil {
-		x_log.RootLogger().Structured().Error("failed to send SUB message", x_log.FError(err))
+		//	x_log.RootLogger().Structured().Error("failed to send SUB message", x_log.FError(err))
 	}
 	l.Rw.Flush()
 }
@@ -327,7 +326,7 @@ func (l *Leaf) SendSub(subject string) {
 func (l *Leaf) SendUnsub(subject string) {
 	_, err := fmt.Fprintf(l.Rw, "UNSUB %s\n", subject)
 	if err != nil {
-		x_log.RootLogger().Structured().Error("failed to send UNSUB message", x_log.FError(err))
+		//	x_log.RootLogger().Structured().Error("failed to send UNSUB message", x_log.FError(err))
 	}
 	l.Rw.Flush()
 }
@@ -335,7 +334,7 @@ func (l *Leaf) SendUnsub(subject string) {
 func (l *Leaf) SendResp(subject string, msg []byte) {
 	_, err := fmt.Fprintf(l.Rw, "RESP %s %d\n", subject, len(msg))
 	if err != nil {
-		x_log.RootLogger().Structured().Error("failed to send RESP message", x_log.FError(err))
+		//	x_log.RootLogger().Structured().Error("failed to send RESP message", x_log.FError(err))
 	}
 	l.Rw.Write(msg)
 	l.Rw.Write([]byte("\n"))

@@ -24,7 +24,7 @@ type Action struct {
 	Inputs  []any  // Input arguments
 	output  *any   // Execution result
 	ctx     context.Context
-	Bus     typ.IClient // Access to the bus
+	Bus     typ.IBusClient // Access to the bus
 }
 
 //---------------------

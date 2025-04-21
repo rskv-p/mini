@@ -6,211 +6,98 @@ import (
 )
 
 //---------------------
-// Types
+// Module
 //---------------------
 
-// Module is a reusable component that can register actions.
+// Module represents a reusable component that registers actions and interacts with IService.
 type Module struct {
-	ModName string
-	Acts    []typ.ActionDef
-
-	OnInit func() error
-	OnStop func() error
+	ModName string          // Module name
+	Acts    []typ.ActionDef // List of actions associated with the module
+	Service typ.IService    // Service the module interacts with
+	OnInit  func() error    // Optional initialization function
+	OnStart func() error    // Optional stop function
+	OnStop  func() error    // Optional stop function
 }
 
+// Ensure Module implements the IModule interface.
+var _ typ.IModule = (*Module)(nil)
+
 //---------------------
-// Lifecycle
+// Module Lifecycle
 //---------------------
 
-// Name returns the module name.
+// Name returns the name of the module.
 func (m *Module) Name() string {
 	return m.ModName
 }
 
-// Init initializes the module and registers actions.
+// Stop stops the module and performs cleanup if the OnStop function is provided.
 func (m *Module) Init() error {
-	// Register actions
-	for _, a := range m.Acts {
-		act.Register(a.Name, a.Func)
-	}
-
-	// Run custom init (if any)
-	if m.OnInit != nil {
+	// Call the stop function if provided
+	if m.OnStop != nil {
 		return m.OnInit()
 	}
-
 	return nil
 }
 
-// Stop stops the module and executes custom stop logic (if any).
+// Stop stops the module and performs cleanup if the OnStop function is provided.
 func (m *Module) Stop() error {
-	// Run custom stop (if any)
+	// Call the stop function if provided
 	if m.OnStop != nil {
 		return m.OnStop()
 	}
-
 	return nil
 }
 
-// Actions returns the list of actions available in the module.
+// Start starts the module and performs any initialization or setup if the OnStart function is provided.
+func (m *Module) Start() error {
+	// Call the start function if provided
+	if m.OnStart != nil {
+		return m.OnStart()
+	}
+	return nil
+}
+
+//---------------------
+// Actions
+//---------------------
+
+// Actions returns a list of actions associated with the module.
 func (m *Module) Actions() []typ.ActionDef {
 	return m.Acts
 }
 
+// AddAction adds a new action to the module.
+func (m *Module) AddAction(name string, action typ.Handler) {
+	m.Acts = append(m.Acts, typ.ActionDef{Name: name, Func: action})
+}
+
 //---------------------
-// Module Registration
+// Module Creation
 //---------------------
 
-var modules = map[string]typ.IModule{}
-
-// Register adds the module to the global registry.
-func Register(m typ.IModule) {
-	modules[m.Name()] = m
-}
-
-// GetModules returns all registered modules.
-func GetModules() map[string]typ.IModule {
-	return modules
-}
-
-// RegisterBuiltinModules registers all built-in modules.
-func RegisterBuiltinModules() {
-	// Registering built-in modules dynamically
-	RegisterBuiltInModule("m_api", registerAPI)
-	RegisterBuiltInModule("m_bus", registerBus)
-	RegisterBuiltInModule("m_cfg", registerConfig)
-	RegisterBuiltInModule("m_log", registerLog)
-	RegisterBuiltInModule("m_rtm", registerRuntime)
-}
-
-// RegisterBuiltInModule registers a specific built-in module with initialization logic.
-func RegisterBuiltInModule(modName string, initFunc func() error) {
+// NewModule creates a new instance of Module with the given name, service, actions, and optional OnInit and OnStop functions.
+func NewModule(modName string, service typ.IService, actions []typ.ActionDef, onInit func() error, onStop func() error) *Module {
+	// Create a new module with the provided parameters
 	module := &Module{
 		ModName: modName,
-		OnInit:  initFunc,
+		Acts:    actions,
+		Service: service,
+		OnInit:  onInit,
+		OnStop:  onStop,
 	}
 
-	// Dynamically register the module
-	Register(module)
-}
-
-// InitAll initializes all modules.
-func InitAll() error {
-	for _, m := range modules {
-		if err := m.Init(); err != nil {
-			return err
+	// Call the initialization function if provided
+	if module.OnInit != nil {
+		if err := module.OnInit(); err != nil {
+			return nil
 		}
 	}
-	return nil
-}
 
-// StopAll stops all modules.
-func StopAll() {
-	for _, m := range modules {
-		_ = m.Stop()
-	}
-}
-
-//---------------------
-// Built-in Module Registrations
-//---------------------
-
-// registerAPI registers actions for the API module.
-func registerAPI() error {
-	apiActions := []typ.ActionDef{
-		{
-			Name: "api.get_info",
-			Func: func(a typ.IAction) any {
-				// Logic to retrieve API info
-				return "API Info"
-			},
-		},
+	// Register actions for the module
+	for _, a := range actions {
+		act.Register(a.Name, a.Func)
 	}
 
-	// Register actions for m_api
-	for _, action := range apiActions {
-		act.Register(action.Name, action.Func)
-	}
-
-	return nil
-}
-
-// registerBus registers actions for the Bus module.
-func registerBus() error {
-	busActions := []typ.ActionDef{
-		{
-			Name: "bus.publish",
-			Func: func(a typ.IAction) any {
-				// Logic to publish a message
-				return "Published to Bus"
-			},
-		},
-	}
-
-	// Register actions for m_bus
-	for _, action := range busActions {
-		act.Register(action.Name, action.Func)
-	}
-
-	return nil
-}
-
-// registerConfig registers actions for the Config module.
-func registerConfig() error {
-	configActions := []typ.ActionDef{
-		{
-			Name: "config.get",
-			Func: func(a typ.IAction) any {
-				// Logic to get config value
-				return "Config Value"
-			},
-		},
-	}
-
-	// Register actions for m_cfg
-	for _, action := range configActions {
-		act.Register(action.Name, action.Func)
-	}
-
-	return nil
-}
-
-// registerLog registers actions for the Log module.
-func registerLog() error {
-	logActions := []typ.ActionDef{
-		{
-			Name: "log.info",
-			Func: func(a typ.IAction) any {
-				// Logic to log info
-				return "Log Info"
-			},
-		},
-	}
-
-	// Register actions for m_log
-	for _, action := range logActions {
-		act.Register(action.Name, action.Func)
-	}
-
-	return nil
-}
-
-// registerRuntime registers actions for the Runtime module.
-func registerRuntime() error {
-	runtimeActions := []typ.ActionDef{
-		{
-			Name: "runtime.execute",
-			Func: func(a typ.IAction) any {
-				// Logic to execute runtime actions
-				return "Runtime Executed"
-			},
-		},
-	}
-
-	// Register actions for m_rtm
-	for _, action := range runtimeActions {
-		act.Register(action.Name, action.Func)
-	}
-
-	return nil
+	return module
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/rskv-p/mini/act"
+	"github.com/rskv-p/mini/mod"
 	"github.com/rskv-p/mini/typ"
 )
 
@@ -16,12 +17,12 @@ import (
 //---------------------
 
 // RegisterAction registers a handler in x_action,
-// and exposes it as a public API if Public option is set.
+// and exposes it as a public API if the Public option is set.
 func RegisterAction(name string, handler typ.Handler, opts APIOption) error {
 	// Register in x_action
 	act.Register(name, handler)
 
-	// Wrap as public API endpoint if Public option is set
+	// Wrap as a public API endpoint if the Public option is set
 	if opts.Public {
 		return RegisterAPI(name, handler, opts)
 	}
@@ -30,7 +31,7 @@ func RegisterAction(name string, handler typ.Handler, opts APIOption) error {
 
 // RegisterAPI registers a public API endpoint for the action.
 func RegisterAPI(name string, handler typ.Handler, opts APIOption) error {
-	// Ensure we register the action properly as a public API
+	// Ensure the action is properly registered as a public API
 	Register(name, func(args []any) (any, error) {
 		// Create a new action with context
 		ctx := context.Background()
@@ -56,47 +57,57 @@ func RegisterAPI(name string, handler typ.Handler, opts APIOption) error {
 	return nil
 }
 
-// Handler is the type for functions that handle actions
-// Registry to map handler names to actual functions
-var handlerRegistry = map[string]typ.Handler{}
-
 //---------------------
 // Module Implementation
 //---------------------
 
-type APIActionModule struct{}
+// ApiModule represents the API module that implements the IModule interface.
+type ApiModule struct {
+	Module          typ.IModule
+	handlerRegistry map[string]typ.Handler
+	logClient       typ.ILogClient // Client for logging
+
+}
 
 // Name returns the name of the API module.
-func (m *APIActionModule) Name() string {
-	return "API Action Module"
+func (m *ApiModule) Name() string {
+	return m.Module.Name()
 }
 
 // Init initializes the API action module.
-func (m *APIActionModule) Init() error {
-	log.Println("Initializing API Action Module")
+func (m *ApiModule) Init() error {
+	log.Println("Initializing API Module")
+
+	// Initialize the handler registry
+	m.handlerRegistry = make(map[string]typ.Handler)
+
+	// Register the /docs endpoint
+	registerDocsEndpoint()
+
+	return nil
+}
+
+// Stop stops the module (specific shutdown logic can be added).
+func (s *ApiModule) Start() error {
+	// Here you can implement stop logic if needed
 	return nil
 }
 
 // Stop stops the API action module.
-func (m *APIActionModule) Stop() error {
-	log.Println("Stopping API Action Module")
+func (m *ApiModule) Stop() error {
+	log.Println("Stopping API Module")
 	return nil
 }
 
-// NewAPIActionModule creates and returns an instance of the API Action Module
-func NewAPIActionModule() *APIActionModule {
-	return &APIActionModule{}
-}
+// NewApiModule creates and returns an instance of the API action module.
+func NewApiModule(service typ.IService) *ApiModule {
+	// Create a new module using NewModule
+	module := mod.NewModule("api", service, nil, nil, nil)
 
-// RegisterHandler registers a handler for a given name
-func RegisterHandler(name string, handler typ.Handler) error {
-	// Ensure the handler registry contains the handler by name
-	name = strings.ToLower(name)
-	if _, exists := handlerRegistry[name]; exists {
-		return fmt.Errorf("handler '%s' already registered", name)
+	// Return the ApiModule with the created module
+	return &ApiModule{
+		Module: module,
 	}
-	handlerRegistry[name] = handler
-	return nil
 }
 
 //---------------------
@@ -127,7 +138,7 @@ func Get(name string) (APIEntry, bool) {
 
 // APIOption defines metadata for exposing an action via API.
 type APIOption struct {
-	Public bool     // If true, action is exposed via /api/<name>
+	Public bool     // If true, the action is exposed via /api/<name>
 	Auth   bool     // Reserved for future use (authorization)
 	Doc    string   // Optional documentation string
 	Tags   []string // Optional categorization
@@ -146,8 +157,14 @@ type APIEntry struct {
 
 var ErrHandlerNotFound = errors.New("handler not found")
 
-// Example usage of error handling in the API registration process
-func (m *APIActionModule) Actions() []typ.ActionDef {
+//---------------------
+// Handlers for Actions
+//---------------------
+
+var _ typ.IModule = (*ApiModule)(nil)
+
+// Actions returns a list of actions the module can perform.
+func (m *ApiModule) Actions() []typ.ActionDef {
 	return []typ.ActionDef{
 		{
 			Name: "api.register_action",
@@ -155,8 +172,8 @@ func (m *APIActionModule) Actions() []typ.ActionDef {
 				name := a.InputString(0)
 				handlerName := a.InputString(1)
 
-				// Check for valid handler registration
-				handler, found := handlerRegistry[strings.ToLower(handlerName)]
+				// Check if the handler is registered
+				handler, found := m.handlerRegistry[strings.ToLower(handlerName)]
 				if !found {
 					return fmt.Errorf("handler '%s' not found", handlerName)
 				}
@@ -168,7 +185,7 @@ func (m *APIActionModule) Actions() []typ.ActionDef {
 					Tags:   []string{}, // Optional tags
 				}
 
-				// Register action with handler
+				// Register the action with the handler
 				err := RegisterAction(name, handler, opts)
 				if err != nil {
 					return fmt.Errorf("error registering action: %v", err)
@@ -179,4 +196,32 @@ func (m *APIActionModule) Actions() []typ.ActionDef {
 			Public: true,
 		},
 	}
+}
+
+//---------------------
+// Docs Endpoint
+//---------------------
+
+// registerDocsEndpoint registers the /docs endpoint for the API module.
+func registerDocsEndpoint() {
+	// Here we pass an empty APIOption with Public set to true
+	Register("api.docs", func(args []any) (any, error) {
+		// Create a map to store the documentation
+		docs := map[string]any{}
+
+		// Iterate over the registered handlers
+		for name := range act.Handlers {
+			// Retrieve the API entry for each handler
+			apiEntry, ok := Get(name)
+			docs[name] = map[string]any{
+				"handler": name,
+				"public":  ok && apiEntry.Options.Public,
+				"doc":     apiEntry.Options.Doc,
+				"tags":    apiEntry.Options.Tags,
+			}
+		}
+
+		// Return the generated documentation
+		return docs, nil
+	}, APIOption{Public: true}) // Pass the APIOption
 }

@@ -1,6 +1,10 @@
 package x_db
 
 import (
+	"fmt"
+
+	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -9,29 +13,53 @@ import (
 // Database Config
 //---------------------
 
-// DatabaseConfig contains the configuration parameters for connecting to the database.
+// DatabaseConfig содержит параметры конфигурации для подключения к базе данных.
 type DatabaseConfig struct {
-	Dialect  string // Database dialect (e.g., sqlite, mysql, postgres)
-	Host     string // Host address
-	Port     int    // Port number
-	User     string // Database username
-	Password string // Database password
-	DbName   string // Database name
+	Dialect  string // Драйвер базы данных (например, sqlite, mysql, postgres)
+	Host     string // Адрес хоста
+	Port     int    // Номер порта
+	User     string // Имя пользователя базы данных
+	Password string // Пароль базы данных
+	DbName   string // Имя базы данных
 }
 
 //---------------------
 // Database Initialization
 //---------------------
 
-// InitDB initializes the database connection using GORM.
+// InitDB инициализирует соединение с базой данных с использованием GORM и конфигурации.
 func InitDB(config DatabaseConfig) (*gorm.DB, error) {
-	// Set up the connection string (DSN) for the database
-	dsn := "gorm.db" // Configure the connection string for different databases (e.g., MySQL, PostgreSQL, SQLite)
-
-	// Open a connection to the database
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	if err != nil {
-		return nil, err // Return error if the connection fails
+	var dsn string
+	// Настройка строки подключения (DSN) для разных баз данных
+	switch config.Dialect {
+	case "sqlite":
+		// Для SQLite достаточно имени файла базы данных
+		dsn = config.DbName
+	case "mysql":
+		// Строка подключения для MySQL
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local", config.User, config.Password, config.Host, config.Port, config.DbName)
+	case "postgres":
+		// Строка подключения для PostgreSQL
+		dsn = fmt.Sprintf("host=%s port=%d user=%s dbname=%s password=%s sslmode=disable", config.Host, config.Port, config.User, config.DbName, config.Password)
+	default:
+		return nil, fmt.Errorf("unsupported database dialect: %s", config.Dialect)
 	}
-	return db, nil // Return the database instance if successful
+
+	// Открытие соединения с базой данных в зависимости от диалекта
+	var db *gorm.DB
+	var err error
+	switch config.Dialect {
+	case "sqlite":
+		db, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	case "mysql":
+		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	case "postgres":
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %v", err)
+	}
+
+	return db, nil // Возвращаем экземпляр базы данных, если соединение успешно
 }

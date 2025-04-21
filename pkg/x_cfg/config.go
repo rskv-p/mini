@@ -8,13 +8,17 @@ import (
 )
 
 var (
-	mu     sync.RWMutex
+	mu     sync.RWMutex // Mutex to ensure thread safety
 	values = map[string]any{}
-	path   string
+	path   string // Path to the loaded configuration file
 )
 
-// Load loads configuration from a JSON file.
-func Load(file string) error {
+//---------------------
+// Load and Save Config
+//---------------------
+
+// LoadConfig loads the configuration from a specified file.
+func LoadConfig(file string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -24,54 +28,106 @@ func Load(file string) error {
 		return fmt.Errorf("failed to read config file %s: %w", file, err)
 	}
 
-	// Unmarshal JSON data into the config values
+	// Parse the JSON data into the configuration map
 	if err := json.Unmarshal(data, &values); err != nil {
 		return fmt.Errorf("failed to unmarshal config data from %s: %w", file, err)
 	}
 
-	// Store the path of the loaded file
+	// Save the path of the loaded file
 	path = file
 	return nil
 }
 
-// Reload reloads the configuration from the original file.
-func Reload() error {
-	if path == "" {
-		return fmt.Errorf("no config file loaded, cannot reload")
+// SaveConfig saves the current configuration to a file.
+func SaveConfig(file string) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Convert the configuration map to JSON
+	data, err := json.MarshalIndent(values, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config data: %w", err)
 	}
-	return Load(path)
+
+	// Write the data to the specified file
+	if err := os.WriteFile(file, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file %s: %w", file, err)
+	}
+
+	return nil
 }
 
-// Get retrieves a value from the config by key.
-func Get(key string) any {
+//---------------------
+// Get, Set, Delete
+//---------------------
+
+// Get retrieves a configuration value by key.
+func Get(moduleName, key string) any {
 	mu.RLock()
 	defer mu.RUnlock()
 	return values[key]
 }
 
-// Set adds or updates a value in the config.
-func Set(key string, val any) {
+// Set sets a configuration value for the specified key.
+func Set(moduleName, key string, val any) {
 	mu.Lock()
 	defer mu.Unlock()
 	values[key] = val
 }
 
-// Delete removes a key from the config.
-func Delete(key string) {
+// Delete removes a key from the configuration.
+func Delete(moduleName, key string) {
 	mu.Lock()
 	defer mu.Unlock()
 	delete(values, key)
 }
 
-// All returns a copy of the full config map.
+//---------------------
+// Full Configuration
+//---------------------
+
+// All returns a copy of the entire configuration.
 func All() map[string]any {
 	mu.RLock()
 	defer mu.RUnlock()
 
-	// Clone the map to avoid race conditions with concurrent access
+	// Clone the map to prevent race conditions during access
 	clone := make(map[string]any, len(values))
 	for k, v := range values {
 		clone[k] = v
 	}
 	return clone
+}
+
+//---------------------
+// Reload Configuration
+//---------------------
+
+// Reload reloads the configuration from the file if the file path is set.
+func Reload(file string) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// If no file path is set, return an error
+	if path == "" {
+		return fmt.Errorf("no config file loaded")
+	}
+
+	// If a new file path is provided, load the configuration again
+	if file != "" {
+		path = file
+	}
+
+	// Read the configuration file again
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read config file %s: %w", path, err)
+	}
+
+	// Parse the JSON data into the configuration map
+	if err := json.Unmarshal(data, &values); err != nil {
+		return fmt.Errorf("failed to unmarshal config data from %s: %w", path, err)
+	}
+
+	return nil
 }

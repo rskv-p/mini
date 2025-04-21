@@ -1,254 +1,210 @@
-// file:mini/pkg/x_log/logger.go
 package x_log
 
 import (
+	"fmt"
 	"os"
-	"path/filepath"
+	"runtime"
 	"strings"
 )
 
 //---------------------
-// TYPES
+// Log Levels
 //---------------------
 
-type Level int
-
-type Format int
-
-type Logger interface {
-	TraceEnabled() bool
-	DebugEnabled() bool
-
-	Trace(args ...any)
-	Debug(args ...any)
-	Info(args ...any)
-	Warn(args ...any)
-	Error(args ...any)
-
-	Tracef(format string, args ...any)
-	Debugf(format string, args ...any)
-	Infof(format string, args ...any)
-	Warnf(format string, args ...any)
-	Errorf(format string, args ...any)
-
-	Structured() StructuredLogger
-}
-
-type StructuredLogger interface {
-	Debug(msg string, fields ...Field)
-	Info(msg string, fields ...Field)
-	Warn(msg string, fields ...Field)
-	Error(msg string, fields ...Field)
-}
-
-type Field = any
-
-//---------------------
-// LOG LEVELS
-//---------------------
-
+// Define basic log levels
 const (
-	TraceLevel Level = iota
-	DebugLevel
-	InfoLevel
-	WarnLevel
-	ErrorLevel
+	InfoLevel  = "INFO"
+	ErrorLevel = "ERROR"
+	DebugLevel = "DEBUG"
+	WarnLevel  = "WARN"
+	TraceLevel = "TRACE"
 )
 
 //---------------------
-// LOG FORMATS
+// Log Configuration Struct
 //---------------------
 
-const (
-	FormatConsole Format = iota
-	FormatJson
-)
+type Config struct {
+	Name       string   // Logger name
+	Level      string   // Log level (e.g., INFO, ERROR, etc.)
+	Format     string   // Log format (e.g., console or json)
+	Outputs    []string // Log outputs (stdout, stderr, or file paths)
+	WithCaller bool     // Include caller info in logs
+}
 
 //---------------------
-// ENVIRONMENT
+// Configuration Loading
 //---------------------
 
-const (
-	EnvKeyLogCtx        = "MINI_LOG_CTX"
-	EnvKeyLogDateFormat = "MINI_LOG_DTFORMAT"
-	EnvKeyLogLevel      = "MINI_LOG_LEVEL"
-	EnvKeyLogFormat     = "MINI_LOG_FORMAT"
-	EnvKeyLogSeparator  = "MINI_LOG_SEPARATOR"
-	EnvLogConsoleStream = "MINI_LOG_CONSOLE_STREAM"
-	EnvLogFilePath      = "MINI_LOG_FILE"
-	EnvLogFileMaxMB     = "MINI_LOG_FILE_MAX_MB"
-	EnvLogFileMaxAge    = "MINI_LOG_FILE_MAX_AGE"
-	EnvLogFileMaxBack   = "MINI_LOG_FILE_BACKUPS"
-	EnvLogFileCompress  = "MINI_LOG_FILE_COMPRESS"
-
-	DefaultLogDateFormat = "01-02 15:04:05"
-	DefaultLogLevel      = DebugLevel
-	DefaultLogFormat     = FormatConsole
-	DefaultLogSeparator  = " "
-)
-
-//---------------------
-// GLOBALS
-//---------------------
-
-var (
-	rootLogger   Logger
-	ctxLogging   bool
-	traceEnabled = true
-	logStyles    = DefaultStylesDark()
-)
-
-//---------------------
-// INITIALIZATION
-//---------------------
-
-func init() {
-	cfg := LoadConfigFromEnv()
-	if strings.ToLower(os.Getenv(EnvKeyLogCtx)) == "true" {
-		ctxLogging = true
+// LoadConfigFromEnv loads the log configuration from environment variables.
+func LoadConfigFromEnv() *Config {
+	cfg := &Config{
+		Name:       "mini",    // Default name
+		Level:      "DEBUG",   // Default level
+		Format:     "console", // Default format
+		Outputs:    parseOutputPaths(),
+		WithCaller: strings.ToLower(os.Getenv("MINI_LOG_CALLER")) == "true",
 	}
-	traceEnabled = cfg.WithTrace
-	rootLogger = newZapRootLoggerWithOutput(cfg)
-	SetLogLevel(rootLogger, cfg.Level)
-}
 
-//---------------------
-// ACCESSORS
-//---------------------
-
-func CtxLoggingEnabled() bool {
-	return ctxLogging
-}
-
-func RootLogger() Logger {
-	return rootLogger
-}
-
-func SetLogLevel(logger Logger, level Level) {
-	setZapLogLevel(logger, level)
-}
-
-func Sync() {
-	zapSync(rootLogger)
-}
-
-//---------------------
-// CHILD LOGGER HELPERS
-//---------------------
-
-func ChildLogger(logger Logger, name string) Logger {
-	child, err := newZapChildLogger(logger, name)
-	if err != nil {
-		rootLogger.Warnf("unable to create child logger [%s]: %s", name, err)
-		return logger
+	// Load the log level from environment variable
+	if level := strings.ToUpper(os.Getenv("MINI_LOG_LEVEL")); level != "" {
+		cfg.Level = level
 	}
-	return child
-}
 
-func ChildLoggerWithFields(logger Logger, fields ...Field) Logger {
-	child, err := newZapChildLoggerWithFields(logger, fields...)
-	if err != nil {
-		rootLogger.Warnf("unable to create child logger with fields: %s", err)
-		return logger
+	// Load log format from environment variable
+	if format := strings.ToUpper(os.Getenv("MINI_LOG_FORMAT")); format != "" {
+		cfg.Format = format
 	}
-	return child
+
+	return cfg
 }
 
-func CreateLoggerFromRef(logger Logger, contributionType, ref string) Logger {
-	ref = strings.TrimSpace(ref)
-	ref = strings.TrimSuffix(ref, "/")
-	dirs := strings.Split(ref, "/")
+// parseOutputPaths parses the output paths (stdout, stderr, or file paths).
+func parseOutputPaths() []string {
+	var paths []string
+	stream := strings.ToLower(os.Getenv("MINI_LOG_CONSOLE_STREAM"))
+	if stream == "stdout" || stream == "stderr" {
+		paths = append(paths, stream)
+	}
+	if file := os.Getenv("MINI_LOG_FILE"); file != "" {
+		paths = append(paths, file)
+	}
+	if len(paths) == 0 {
+		paths = append(paths, "stdout")
+	}
+	return paths
+}
 
-	switch {
-	case len(dirs) >= 3:
-		name := dirs[len(dirs)-1]
-		acType := dirs[len(dirs)-2]
-		if acType == "activity" || acType == "trigger" || acType == "connector" {
-			category := dirs[len(dirs)-3]
-			return ChildLogger(logger, strings.ToLower(category+"."+acType+"."+name))
+//---------------------
+// Simple Logger Implementation
+//---------------------
+
+// SimpleLogger is a basic implementation of the Logger interface with additional context.
+type SimpleLogger struct {
+	level   string
+	outputs []string
+}
+
+// NewLogger creates a new instance of SimpleLogger with the specified configuration.
+func NewLogger(cfg *Config) *SimpleLogger {
+	return &SimpleLogger{
+		level:   cfg.Level,
+		outputs: cfg.Outputs,
+	}
+}
+
+// Log function logs a message based on the log level and additional context.
+func (l *SimpleLogger) Log(level string, msg string, context map[string]interface{}) {
+	if shouldLog(l.level, level) {
+		logMessage := fmt.Sprintf("[%s] %s: %s", level, l.getCallerInfo(), msg)
+		// Add context to the log message
+		if len(context) > 0 {
+			for key, value := range context {
+				logMessage += fmt.Sprintf(" | %s=%v", key, value)
+			}
 		}
-		return ChildLogger(logger, strings.ToLower(acType+"."+contributionType+"."+name))
-	default:
-		return ChildLogger(logger, strings.ToLower(contributionType+"."+filepath.Base(ref)))
+
+		fmt.Println(logMessage)
 	}
+}
+
+// Info logs an info message with optional context.
+func (l *SimpleLogger) Info(msg string, context map[string]interface{}) {
+	l.Log(InfoLevel, msg, context)
+}
+
+// Error logs an error message with optional context.
+func (l *SimpleLogger) Error(msg string, context map[string]interface{}) {
+	l.Log(ErrorLevel, msg, context)
+}
+
+// Debug logs a debug message with optional context.
+func (l *SimpleLogger) Debug(msg string, context map[string]interface{}) {
+	l.Log(DebugLevel, msg, context)
+}
+
+// Warn logs a warn message with optional context.
+func (l *SimpleLogger) Warn(msg string, context map[string]interface{}) {
+	l.Log(WarnLevel, msg, context)
+}
+
+// Trace logs a trace message with optional context.
+func (l *SimpleLogger) Trace(msg string, context map[string]interface{}) {
+	l.Log(TraceLevel, msg, context)
 }
 
 //---------------------
-// UTILITIES
+// Helper Functions
 //---------------------
 
-func ToLogLevel(levelStr string) Level {
-	switch strings.ToUpper(levelStr) {
-	case "TRACE":
-		return DebugLevel
-	case "DEBUG":
-		return DebugLevel
-	case "INFO":
-		return InfoLevel
-	case "WARN":
-		return WarnLevel
-	case "ERROR":
-		return ErrorLevel
-	default:
-		return DefaultLogLevel
-	}
+// shouldLog checks if a message should be logged based on the log level.
+func shouldLog(currentLevel, messageLevel string) bool {
+	levels := []string{TraceLevel, DebugLevel, InfoLevel, WarnLevel, ErrorLevel}
+	currentLevelIndex := indexOf(levels, currentLevel)
+	messageLevelIndex := indexOf(levels, messageLevel)
+	return messageLevelIndex >= currentLevelIndex
 }
 
-func getLogSeparator() string {
-	if v, ok := os.LookupEnv(EnvKeyLogSeparator); ok && len(v) > 0 {
-		return v
+// indexOf returns the index of the level in the list.
+func indexOf(levels []string, level string) int {
+	for i, l := range levels {
+		if l == level {
+			return i
+		}
 	}
-	return DefaultLogSeparator
+	return -1
 }
 
-//---------------------
-// STYLE HELPERS
-//---------------------
-
-func StyledLevel(level string) string {
-	if s, ok := logStyles.Levels[level]; ok {
-		return s.Render(strings.ToUpper(level))
+// getCallerInfo retrieves caller info if needed (could be expanded later).
+func (l *SimpleLogger) getCallerInfo() string {
+	// Get the caller function and file/line
+	_, file, line, ok := runtime.Caller(2) // Skip 2 levels to get the caller's file and line number
+	if ok {
+		return fmt.Sprintf("%s:%d", file, line)
 	}
-	return logStyles.DefaultKeyStyle.Render(strings.ToUpper(level))
-}
-
-func StyledKey(key string) string {
-	if s, ok := logStyles.Keys[key]; ok {
-		return s.Render(key)
-	}
-	return logStyles.DefaultKeyStyle.Render(key)
-}
-
-func StyledValue(key, value string) string {
-	if s, ok := logStyles.Values[key]; ok {
-		return s.Render(value)
-	}
-	return logStyles.DefaultValueStyle.Render(value)
-}
-
-func RenderStyledFields(fields map[string]string) string {
-	var sb strings.Builder
-	for k, v := range fields {
-		sb.WriteString(StyledKey(k))
-		sb.WriteString("=")
-		sb.WriteString(StyledValue(k, v))
-		sb.WriteString("  ")
-	}
-	return sb.String()
+	return "unknown"
 }
 
 //---------------------
-// DEFAULT LOGGER SHORTCUTS
+// Global Logger
 //---------------------
 
-func Trace(args ...any) { rootLogger.Trace(args...) }
-func Debug(args ...any) { rootLogger.Debug(args...) }
-func Info(args ...any)  { rootLogger.Info(args...) }
-func Warn(args ...any)  { rootLogger.Warn(args...) }
-func Error(args ...any) { rootLogger.Error(args...) }
+var globalLogger *SimpleLogger
 
-func Tracef(format string, args ...any) { rootLogger.Tracef(format, args...) }
-func Debugf(format string, args ...any) { rootLogger.Debugf(format, args...) }
-func Infof(format string, args ...any)  { rootLogger.Infof(format, args...) }
-func Warnf(format string, args ...any)  { rootLogger.Warnf(format, args...) }
-func Errorf(format string, args ...any) { rootLogger.Errorf(format, args...) }
+// GetLogger returns the global logger instance.
+func GetLogger() *SimpleLogger {
+	if globalLogger == nil {
+		cfg := LoadConfigFromEnv()
+		globalLogger = NewLogger(cfg)
+	}
+	return globalLogger
+}
+
+//---------------------
+// Log Shortcuts
+//---------------------
+
+// Info logs an info message with optional context.
+func Info(msg string, context map[string]interface{}) {
+	GetLogger().Info(msg, context)
+}
+
+// Error logs an error message with optional context.
+func Error(msg string, context map[string]interface{}) {
+	GetLogger().Error(msg, context)
+}
+
+// Debug logs a debug message with optional context.
+func Debug(msg string, context map[string]interface{}) {
+	GetLogger().Debug(msg, context)
+}
+
+// Warn logs a warn message with optional context.
+func Warn(msg string, context map[string]interface{}) {
+	GetLogger().Warn(msg, context)
+}
+
+// Trace logs a trace message with optional context.
+func Trace(msg string, context map[string]interface{}) {
+	GetLogger().Trace(msg, context)
+}

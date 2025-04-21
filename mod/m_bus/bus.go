@@ -6,7 +6,6 @@ import (
 	"github.com/rskv-p/mini/act"
 	"github.com/rskv-p/mini/mod"
 	"github.com/rskv-p/mini/pkg/x_bus"
-	"github.com/rskv-p/mini/pkg/x_log"
 	"github.com/rskv-p/mini/typ"
 )
 
@@ -21,36 +20,82 @@ var ErrInvalidActionType = fmt.Errorf("invalid action type")
 // Bus Module
 //---------------------
 
-// BusModule creates and returns a bus module with actions for publish, subscribe, and stats.
-func BusModule(bus *x_bus.Bus) typ.IModule {
-	return &mod.Module{
-		ModName: "bus",
-		Acts: []typ.ActionDef{
-			{
-				Name:   "bus.publish",
-				Func:   HandlePublish,
-				Public: true,
-			},
-			{
-				Name:   "bus.subscribe",
-				Func:   HandleSubscribe,
-				Public: true,
-			},
-			{
-				Name:   "bus.stats",
-				Func:   HandleStats, // Bus statistics
-				Public: true,
-			},
+// BusModule manages the bus system for publishing and subscribing to messages.
+type BusModule struct {
+	Module    typ.IModule    // The module implementing IModule interface
+	Bus       *x_bus.Bus     // The bus object for handling messages
+	logClient typ.ILogClient // Client for logging
+}
+
+// Ensure BusModule implements the IModule interface.
+var _ typ.IModule = (*BusModule)(nil)
+
+// Name returns the name of the module.
+func (m *BusModule) Name() string {
+	return m.Module.Name()
+}
+
+// Stop stops the module (specific shutdown logic can be added).
+func (s *BusModule) Start() error {
+	// Here you can implement stop logic if needed
+	return nil
+}
+
+// Stop stops the module (specific shutdown logic can be added).
+func (s *BusModule) Init() error {
+	// Here you can implement stop logic if needed
+	return nil
+}
+
+// Stop stops the module and logs the shutdown process.
+func (m *BusModule) Stop() error {
+	m.logClient.Info("Stopping Bus module", map[string]interface{}{"module": m.Name()})
+	return nil
+}
+
+// Actions returns a list of actions that the bus module can perform.
+func (m *BusModule) Actions() []typ.ActionDef {
+	return []typ.ActionDef{
+		{
+			Name:   "bus.publish",
+			Func:   HandlePublish,
+			Public: true,
 		},
-		OnInit: func() error {
-			// Initialize the bus module (no specific initialization required here)
-			return nil
+		{
+			Name:   "bus.subscribe",
+			Func:   HandleSubscribe,
+			Public: true,
 		},
-		OnStop: func() error {
-			// Stop the bus module (no specific stopping required here)
-			return nil
+		{
+			Name:   "bus.stats",
+			Func:   HandleStats, // Bus statistics action
+			Public: true,
 		},
 	}
+}
+
+//---------------------
+// Module Creation
+//---------------------
+
+// NewBusModule creates a new instance of BusModule and initializes it.
+func NewBusModule(service typ.IService, bus *x_bus.Bus, logClient typ.ILogClient) *BusModule {
+	// Create a new module using NewModule
+	module := mod.NewModule("bus", service, nil, nil, nil)
+
+	// Return the BusModule with the created module
+	busModule := &BusModule{
+		Module:    module,
+		Bus:       bus,
+		logClient: logClient,
+	}
+
+	// Register actions for the bus module
+	for _, action := range busModule.Actions() {
+		act.Register(action.Name, action.Func)
+	}
+
+	return busModule
 }
 
 //---------------------
@@ -70,11 +115,12 @@ func handleActionCast(a typ.IAction) (*act.Action, error) {
 // Handlers for Actions
 //---------------------
 
-// HandlePublish processes the action to publish a message through the bus.
+// HandlePublish handles the action for publishing a message to the bus.
 func HandlePublish(a typ.IAction) any {
 	action, err := handleActionCast(a)
 	if err != nil {
-		x_log.RootLogger().Errorf("Failed to cast action to *act.Action: %v", err)
+		// Log the error
+		//action.logClient.Error("Failed to cast action to *act.Action", map[string]interface{}{"error": err})
 		return err
 	}
 
@@ -84,52 +130,59 @@ func HandlePublish(a typ.IAction) any {
 		return fmt.Errorf("invalid message type for publish: expected []byte")
 	}
 
-	// Publish the message through the bus
+	// Publish the message to the bus
 	err = action.Bus.Publish(subject, msg)
 	if err != nil {
-		x_log.RootLogger().Errorf("Failed to publish message to subject %s: %v", subject, err)
+		// Log the error
+		//action.logClient.Error(fmt.Sprintf("Failed to publish message to subject %s", subject), map[string]interface{}{"subject": subject, "error": err})
 		return err
 	}
 
-	x_log.RootLogger().Infof("Successfully published message to subject %s", subject)
+	// Log success
+	//action.logClient.Info(fmt.Sprintf("Successfully published message to subject %s", subject), map[string]interface{}{"subject": subject})
 	return true
 }
 
-// HandleSubscribe processes the action to subscribe to a topic.
+// HandleSubscribe handles the action for subscribing to a subject on the bus.
 func HandleSubscribe(a typ.IAction) any {
 	action, err := handleActionCast(a)
 	if err != nil {
-		x_log.RootLogger().Errorf("Failed to cast action to *act.Action: %v", err)
+		// Log the error
+		//action.logClient.Error("Failed to cast action to *act.Action", map[string]interface{}{"error": err})
 		return err
 	}
 
 	subject := action.InputString(0)
 
-	// Subscribe to the topic through the bus
+	// Subscribe to the subject on the bus
 	err = action.Bus.Subscribe(subject)
 	if err != nil {
-		x_log.RootLogger().Errorf("Failed to subscribe to subject %s: %v", subject, err)
+		// Log the error
+		//action.logClient.Error(fmt.Sprintf("Failed to subscribe to subject %s", subject), map[string]interface{}{"subject": subject, "error": err})
 		return err
 	}
 
-	x_log.RootLogger().Infof("Successfully subscribed to subject %s", subject)
+	// Log success
+	//action.logClient.Info(fmt.Sprintf("Successfully subscribed to subject %s", subject), map[string]interface{}{"subject": subject})
 	return true
 }
 
-// HandleStats returns the bus statistics.
+// HandleStats returns the bus statistics, including the number of clients and subscriptions.
 func HandleStats(a typ.IAction) any {
 	action, err := handleActionCast(a)
 	if err != nil {
-		x_log.RootLogger().Errorf("Failed to cast action to *act.Action: %v", err)
+		// Log the error
+		//action.logClient.Error("Failed to cast action to *act.Action", map[string]interface{}{"error": err})
 		return err
 	}
 
-	// Retrieve and return bus statistics
+	// Get and return the bus statistics
 	stats := map[string]interface{}{
 		"total_clients":       action.Bus.GetClientCount(),
 		"total_subscriptions": action.Bus.GetMsgHandlerCount(),
 	}
 
-	x_log.RootLogger().Infof("Bus stats: %v", stats)
+	// Log the statistics
+	//action.logClient.Info("Bus stats", map[string]interface{}{"stats": stats})
 	return stats
 }

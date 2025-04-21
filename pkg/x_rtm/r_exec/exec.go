@@ -1,4 +1,4 @@
-package exec
+package r_exec
 
 import (
 	"bytes"
@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rskv-p/mini/pkg/x_log"
 	"github.com/rskv-p/mini/pkg/x_rtm"
 	"github.com/rskv-p/mini/typ"
 )
@@ -46,7 +45,7 @@ func (r *ExecRuntime) Dispose() {
 
 	for name, cmd := range r.processes {
 		if err := cmd.Process.Kill(); err != nil {
-			x_log.RootLogger().Structured().Error("failed to kill process", x_log.FString("name", name), x_log.FError(err))
+			//	x_log.RootLogger().Structured().Error("failed to kill process", x_log.FString("name", name), x_log.FError(err))
 		}
 		delete(r.processes, name)
 	}
@@ -93,7 +92,7 @@ func (r *ExecRuntime) Execute(action typ.IAction) (any, error) {
 		r.mu.Lock()
 		delete(r.processes, action.GetName())
 		r.mu.Unlock()
-		x_log.RootLogger().Structured().Error("failed to start process", x_log.FString("name", action.GetName()), x_log.FError(err))
+		//x_log.RootLogger().Structured().Error("failed to start process", x_log.FString("name", action.GetName()), x_log.FError(err))
 		return nil, fmt.Errorf("exec_runtime: failed to start process: %w", err)
 	}
 
@@ -103,12 +102,12 @@ func (r *ExecRuntime) Execute(action typ.IAction) (any, error) {
 		r.mu.Lock()
 		delete(r.processes, action.GetName())
 		r.mu.Unlock()
-		x_log.RootLogger().Structured().Error("process failed", x_log.FString("name", action.GetName()), x_log.FError(err))
+		//	x_log.RootLogger().Structured().Error("process failed", x_log.FString("name", action.GetName()), x_log.FError(err))
 		return nil, fmt.Errorf("exec_runtime: %w: %s", err, stderr.String())
 	}
 
 	// Process completed successfully
-	x_log.RootLogger().Structured().Info("process completed", x_log.FString("name", action.GetName()), x_log.FString("stdout", stdout.String()))
+	//x_log.RootLogger().Structured().Info("process completed", x_log.FString("name", action.GetName()), x_log.FString("stdout", stdout.String()))
 	return map[string]any{
 		"pid":    cmd.Process.Pid,
 		"stdout": stdout.String(),
@@ -139,9 +138,9 @@ func (r *ExecRuntime) Stop(name string) error {
 	err := cmd.Process.Kill()
 	delete(r.processes, name)
 	if err != nil {
-		x_log.RootLogger().Structured().Error("failed to kill process", x_log.FString("name", name), x_log.FError(err))
+		//	x_log.RootLogger().Structured().Error("failed to kill process", x_log.FString("name", name), x_log.FError(err))
 		return err
 	}
-	x_log.RootLogger().Structured().Info("process terminated", x_log.FString("name", name))
+	//	x_log.RootLogger().Structured().Info("process terminated", x_log.FString("name", name))
 	return nil
 }

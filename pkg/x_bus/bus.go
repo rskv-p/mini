@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rskv-p/mini/pkg/x_log"
 	"github.com/rskv-p/mini/pkg/x_req"
 	"github.com/rskv-p/mini/pkg/x_sub"
 	"github.com/rskv-p/mini/typ"
@@ -88,10 +87,10 @@ func (b *Bus) RemoveClient(c *Client) {
 			c.OnUnsubscribe(subject)
 		}
 
-		x_log.RootLogger().Structured().Info("bus unsubscribed due to client removal",
-			x_log.FAny("client_id", c.id),
-			x_log.FString("subject", subject),
-		)
+		// x_log.RootLogger().Structured().Info("bus unsubscribed due to client removal",
+		// 	x_log.FAny("client_id", c.id),
+		// 	x_log.FString("subject", subject),
+		//		)
 	}
 }
 
@@ -189,10 +188,10 @@ func (b *Bus) Respond(reply string, data []byte) error {
 
 	anyForwarded := false
 	for _, leaf := range b.leaves {
-		x_log.RootLogger().Structured().Info("forwarding RESP to leaf",
-			x_log.FString("reply", reply),
-			x_log.FBinary("data", data),
-		)
+		// x_log.RootLogger().Structured().Info("forwarding RESP to leaf",
+		// 	x_log.FString("reply", reply),
+		// 	x_log.FBinary("data", data),
+		// )
 		leaf.SendResp(reply, data)
 		anyForwarded = true
 	}
@@ -270,10 +269,10 @@ func (b *Bus) SubscribeForClient(c *Client, subject, queue string, handler func(
 		c.HandleMessage = func(req *x_req.Request) {
 			for _, mw := range c.bus.middlewares {
 				if err := mw(req); err != nil {
-					x_log.RootLogger().Structured().Warn("middleware blocked request",
-						x_log.FError(err),
-						x_log.FString("subject", req.Subject),
-					)
+					// x_log.RootLogger().Structured().Warn("middleware blocked request",
+					// 	x_log.FError(err),
+					// 	x_log.FString("subject", req.Subject),
+					// )
 					return
 				}
 			}
@@ -303,11 +302,11 @@ func (b *Bus) SubscribeForClient(c *Client, subject, queue string, handler func(
 		Client:  c,
 	})
 
-	x_log.RootLogger().Structured().Info("bus subscription added",
-		x_log.FAny("client_id", c.id),
-		x_log.FString("subject", subject),
-		x_log.FString("queue", queue),
-	)
+	// x_log.RootLogger().Structured().Info("bus subscription added",
+	// 	x_log.FAny("client_id", c.id),
+	// 	x_log.FString("subject", subject),
+	// 	x_log.FString("queue", queue),
+	// )
 
 	return nil
 }
@@ -319,9 +318,9 @@ func (b *Bus) Unsubscribe(subject string) error {
 
 	b.sublist.Remove(&typ.Subscription{Subject: []byte(subject)})
 
-	x_log.RootLogger().Structured().Info("bus unsubscribed",
-		x_log.FString("subject", subject),
-	)
+	// x_log.RootLogger().Structured().Info("bus unsubscribed",
+	// 	x_log.FString("subject", subject),
+	// )
 
 	return nil
 }

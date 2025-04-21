@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/rskv-p/mini/pkg/x_log"
 	"github.com/rskv-p/mini/pkg/x_rtm"
 	"github.com/rskv-p/mini/typ"
 )
@@ -26,7 +25,7 @@ var _ x_rtm.Runtime = (*GoRuntime)(nil)
 // Init prepares the Go runtime (no special initialization needed for Go functions).
 func (r *GoRuntime) Init() error {
 	// No specific initialization for Go functions is needed.
-	x_log.RootLogger().Structured().Info("GoRuntime initialized")
+	//x_log.RootLogger().Structured().Info("GoRuntime initialized")
 	return nil
 }
 
@@ -48,18 +47,18 @@ func (r *GoRuntime) Execute(action typ.IAction) (any, error) {
 	}
 
 	// Log the execution attempt
-	x_log.RootLogger().Structured().Info("Executing Go function", x_log.FString("function", funcName))
+	//x_log.RootLogger().Structured().Info("Executing Go function", x_log.FString("function", funcName))
 
 	// Execute the Go function by looking it up in a registry or using reflection
 	result, err := executeGoFunction(funcName, action)
 	if err != nil {
 		// Log the error and return it
-		x_log.RootLogger().Structured().Error("Error executing Go function", x_log.FString("function", funcName), x_log.FError(err))
+		//	x_log.RootLogger().Structured().Error("Error executing Go function", x_log.FString("function", funcName), x_log.FError(err))
 		return nil, fmt.Errorf("error executing Go function: %w", err)
 	}
 
 	// Log the result of the function execution
-	x_log.RootLogger().Structured().Info("Go function executed successfully", x_log.FString("result", fmt.Sprintf("%v", result)))
+	//x_log.RootLogger().Structured().Info("Go function executed successfully", x_log.FString("result", fmt.Sprintf("%v", result)))
 
 	return result, nil
 }
@@ -71,7 +70,7 @@ func (r *GoRuntime) Execute(action typ.IAction) (any, error) {
 // Dispose cleans up the Go runtime (no resources to release in this case).
 func (r *GoRuntime) Dispose() {
 	// No resources to clean up in Go runtime.
-	x_log.RootLogger().Structured().Info("GoRuntime disposed")
+	//x_log.RootLogger().Structured().Info("GoRuntime disposed")
 }
 
 //---------------------
