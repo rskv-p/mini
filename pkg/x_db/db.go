@@ -1,120 +1,75 @@
 package x_db
 
 import (
-	"context"
-	"fmt"
-
 	"github.com/rskv-p/mini/pkg/x_log"
-	"gorm.io/driver/postgres"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
-//
-// ---------- Public Interfaces ----------
+//---------------------
+// DB Client
+//---------------------
 
-// DB defines the interface for database layer
-type DB interface {
-	Migrate(ctx context.Context) error
-	Close() error
-	DB() *gorm.DB
+var dbInstance *gorm.DB
+
+// DBClient is the concrete implementation of the IDBClient interface.
+type DBClient struct {
+	Db *gorm.DB // Database connection instance
 }
 
-// DbType represents supported database backends
-type DbType string
+//---------------------
+// Database Methods
+//---------------------
 
-const (
-	DbSqlite   DbType = "sqlite"
-	DbPostgres DbType = "postgres"
-)
-
-// Config defines database connection settings
-type Config struct {
-	Type      DbType `json:"Type"`      // "sqlite" or "postgres"
-	DSN       string `json:"DSN"`       // connection string
-	LogFile   string `json:"LogFile"`   // unused (log handled via x_log)
-	LogLevel  string `json:"LogLevel"`  // silent, error, warn, info
-	LogToFile bool   `json:"LogToFile"` // unused (log handled via x_log)
-}
-
-// DAO implements the DB interface using GORM
-type DAO struct {
-	db *gorm.DB
-}
-
-//
-// ---------- Constructor ----------
-
-// NewDatabase creates a new DAO with the provided config
-func New(cfg Config) (*DAO, error) {
-	var dialector gorm.Dialector
-
-	switch cfg.Type {
-	case DbSqlite:
-		dialector = sqlite.Open(cfg.DSN)
-	case DbPostgres:
-		dialector = postgres.Open(cfg.DSN)
-	default:
-		return nil, fmt.Errorf("unsupported db type: %s", cfg.Type)
+// GetDB returns the database connection. It initializes the connection if it doesn't exist.
+func (c *DBClient) GetDB() (*gorm.DB, error) {
+	// If the database instance is not initialized, establish a connection
+	if c.Db == nil {
+		db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{})
+		if err != nil {
+			x_log.RootLogger().Errorf("Failed to connect to the database: %v", err)
+			return nil, err
+		}
+		c.Db = db
 	}
-
-	gormCfg := &gorm.Config{
-		Logger: gormLoggerFromConfig(cfg),
-	}
-
-	db, err := gorm.Open(dialector, gormCfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &DAO{db: db}, nil
+	return c.Db, nil
 }
 
-//
-// ---------- DAO Methods ----------
-
-// Migrate performs automatic schema migration for the provided models
-func (s *DAO) Migrate(ctx context.Context, models ...interface{}) error {
-	return s.db.WithContext(ctx).AutoMigrate(models...)
-}
-
-// Close closes the underlying SQL connection
-func (s *DAO) Close() error {
-	sqlDB, err := s.db.DB()
+// Migrate performs the database migration for the provided models.
+func (c *DBClient) Migrate(models ...interface{}) error {
+	// Get the database connection
+	db, err := c.GetDB()
 	if err != nil {
 		return err
 	}
-	return sqlDB.Close()
+	// Perform the migration
+	return db.AutoMigrate(models...)
 }
 
-// DB exposes raw *gorm.DB for advanced usage
-func (s *DAO) DB() *gorm.DB {
-	return s.db
-}
-
-//
-// ---------- Logging ----------
-
-// gormLoggerFromConfig builds a GORM logger from Config using x_log
-func gormLoggerFromConfig(cfg Config) logger.Interface {
-	level := parseGormLogLevel(cfg.LogLevel)
-	log := x_log.New("gorm")
-	return newlogAdapter(&log, level)
-}
-
-// parseGormLogLevel maps string to GORM log level
-func parseGormLogLevel(lvl string) logger.LogLevel {
-	switch lvl {
-	case "silent":
-		return logger.Silent
-	case "error":
-		return logger.Error
-	case "info":
-		return logger.Info
-	case "warn":
-		return logger.Warn
-	default:
-		return logger.Warn
+// Create inserts a record into the database.
+func (c *DBClient) Create(model interface{}) error {
+	// Get the database connection
+	db, err := c.GetDB()
+	if err != nil {
+		return err
 	}
+	// Insert the model into the database
+	return db.Create(model).Error
+}
+
+// Find finds a record in the database that matches the given conditions.
+func (c *DBClient) Find(model interface{}, conditions ...interface{}) error {
+	// Get the database connection
+	db, err := c.GetDB()
+	if err != nil {
+		return err
+	}
+	// Find the record that matches the conditions
+	return db.First(model, conditions...).Error
+}
+
+// First finds the first record that matches the given conditions.
+func (c *DBClient) First(dest interface{}, conds ...interface{}) *gorm.DB {
+	return c.Db.First(dest, conds...)
 }

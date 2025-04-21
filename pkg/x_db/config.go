@@ -1,48 +1,37 @@
 package x_db
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
-// LoadConfig loads JSON config from file or environment fallback.
-func LoadConfig(path string) (*Config, error) {
-	if path == "" {
-		path = os.Getenv("XDB_CONFIG")
-		if path == "" {
-			path = defaultConfigPath
-		}
-	}
+//---------------------
+// Database Config
+//---------------------
 
-	data, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return &defaultCfg, nil
-		}
-		return nil, fmt.Errorf("cannot read DB config from %s: %w", path, err)
-	}
-
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("cannot parse DB config from %s: %w", path, err)
-	}
-
-	applyDefaults(&cfg)
-	return &cfg, nil
+// DatabaseConfig contains the configuration parameters for connecting to the database.
+type DatabaseConfig struct {
+	Dialect  string // Database dialect (e.g., sqlite, mysql, postgres)
+	Host     string // Host address
+	Port     int    // Port number
+	User     string // Database username
+	Password string // Database password
+	DbName   string // Database name
 }
 
-// applyDefaults fills in default values for missing fields
-func applyDefaults(cfg *Config) {
-	if cfg.Type == "" {
-		cfg.Type = defaultCfg.Type
+//---------------------
+// Database Initialization
+//---------------------
+
+// InitDB initializes the database connection using GORM.
+func InitDB(config DatabaseConfig) (*gorm.DB, error) {
+	// Set up the connection string (DSN) for the database
+	dsn := "gorm.db" // Configure the connection string for different databases (e.g., MySQL, PostgreSQL, SQLite)
+
+	// Open a connection to the database
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err // Return error if the connection fails
 	}
-	if cfg.DSN == "" {
-		cfg.DSN = defaultCfg.DSN
-	}
-	if cfg.LogLevel == "" {
-		cfg.LogLevel = defaultCfg.LogLevel
-	}
+	return db, nil // Return the database instance if successful
 }

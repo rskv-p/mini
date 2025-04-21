@@ -1,86 +1,86 @@
+// file:mini/pkg/x_log/config.go
 package x_log
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
-	"path/filepath"
+	"strconv"
+	"strings"
 )
 
-//
-// ---------- Defaults ----------
+//---------------------
+// Log Configuration Struct
+//---------------------
 
-const defaultConfigPath = "./xlog.json"
+type Config struct {
+	Name       string   // logger name
+	Level      Level    // log level
+	Format     Format   // console or json
+	Outputs    []string // paths: stdout, stderr, or file paths
+	WithTrace  bool     // enable TRACE level
+	WithCaller bool     // include caller info
 
-var defaultConfig = Config{
-	Level:       "info",
-	LogFile:     "logs/app.log",
-	ToConsole:   true,
-	ToFile:      false,
-	ColoredFile: false,
-	Style:       "dark",
-	MaxSize:     10, // MB
-	MaxBackups:  5,  // rotated files
-	MaxAge:      7,  // days
-	Compress:    true,
+	// Rotation (for file output)
+	RotateMaxMB    int  // max size in MB
+	RotateMaxAge   int  // days to keep
+	RotateBackups  int  // how many files
+	RotateCompress bool // compress old files
 }
 
-//
-// ---------- LoadConfig ----------
-
-// LoadConfig reads JSON config from file.
-// If path is empty, uses XLOG_CONFIG or ./xlog.json.
-func LoadConfig(path string) (*Config, error) {
-	// Resolve path
-	if path == "" {
-		path = os.Getenv("XLOG_CONFIG")
-		if path == "" {
-			path = defaultConfigPath
-		}
+func LoadConfigFromEnv() *Config {
+	cfg := &Config{
+		Name:           "mini",
+		Level:          DefaultLogLevel,
+		Format:         DefaultLogFormat,
+		Outputs:        parseOutputPaths(),
+		WithTrace:      false,
+		WithCaller:     strings.ToLower(os.Getenv("MINI_LOG_CALLER")) == "true",
+		RotateMaxMB:    getIntEnv(EnvLogFileMaxMB, 100),
+		RotateMaxAge:   getIntEnv(EnvLogFileMaxAge, 7),
+		RotateBackups:  getIntEnv(EnvLogFileMaxBack, 5),
+		RotateCompress: strings.ToLower(os.Getenv(EnvLogFileCompress)) == "true",
 	}
 
-	// Read file
-	data, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// Return default config if file not found
-			return &defaultConfig, nil
-		}
-		return nil, fmt.Errorf("failed to read config from %s: %w", path, err)
+	switch strings.ToUpper(os.Getenv(EnvKeyLogLevel)) {
+	case "TRACE":
+		cfg.Level = DebugLevel
+		cfg.WithTrace = true
+	case "DEBUG":
+		cfg.Level = DebugLevel
+	case "INFO":
+		cfg.Level = InfoLevel
+	case "WARN":
+		cfg.Level = WarnLevel
+	case "ERROR":
+		cfg.Level = ErrorLevel
 	}
 
-	// Parse JSON
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config from %s: %w", path, err)
+	if strings.ToUpper(os.Getenv(EnvKeyLogFormat)) == "JSON" {
+		cfg.Format = FormatJson
 	}
 
-	applyDefaults(&cfg)
-	return &cfg, nil
+	return cfg
 }
 
-//
-// ---------- Defaults Fill ----------
+func parseOutputPaths() []string {
+	var paths []string
+	stream := strings.ToLower(os.Getenv(EnvLogConsoleStream))
+	if stream == "stdout" || stream == "stderr" {
+		paths = append(paths, stream)
+	}
+	if file := os.Getenv(EnvLogFilePath); file != "" {
+		paths = append(paths, file)
+	}
+	if len(paths) == 0 {
+		paths = append(paths, "stdout")
+	}
+	return paths
+}
 
-// applyDefaults fills missing config values from defaultConfig
-func applyDefaults(cfg *Config) {
-	if cfg.Level == "" {
-		cfg.Level = defaultConfig.Level
+func getIntEnv(key string, fallback int) int {
+	if val, ok := os.LookupEnv(key); ok {
+		if v, err := strconv.Atoi(val); err == nil {
+			return v
+		}
 	}
-	if cfg.LogFile == "" {
-		cfg.LogFile = defaultConfig.LogFile
-	}
-	if cfg.Style == "" {
-		cfg.Style = defaultConfig.Style
-	}
-	if cfg.MaxSize <= 0 {
-		cfg.MaxSize = defaultConfig.MaxSize
-	}
-	if cfg.MaxBackups <= 0 {
-		cfg.MaxBackups = defaultConfig.MaxBackups
-	}
-	if cfg.MaxAge <= 0 {
-		cfg.MaxAge = defaultConfig.MaxAge
-	}
+	return fallback
 }
