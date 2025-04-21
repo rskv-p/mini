@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/dop251/goja v0.0.0-20250309171923-bcd7cc6bf64c
+	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.37.0

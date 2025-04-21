@@ -109,10 +109,10 @@ The lifecycle of the service consists of two main stages:
    func ExampleModule() typ.IModule {
      return &mod.Module{
        ModName: "example",
-       Acts: []typ.ActionDef{
+       Acts: []act_type.ActionDef{
          {
            Name: "example.action",
-           Func: func(a typ.IAction) any {
+           Func: func(a act_type.IAction) any {
              return "This is an example action"
            },
          },
@@ -141,7 +141,7 @@ The lifecycle of the service consists of two main stages:
    Actions represent the core business logic. Example:
    
    ```go
-   func ExampleAction(a typ.IAction) any {
+   func ExampleAction(a act_type.IAction) any {
      action, _ := a.(*act.Action)
      return fmt.Sprintf("Hello %s!", action.InputString(0))
    }

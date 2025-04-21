@@ -4,14 +4,18 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/rskv-p/mini/mod/m_api"
-	"github.com/rskv-p/mini/mod/m_auth"
-	"github.com/rskv-p/mini/mod/m_bus"
-	"github.com/rskv-p/mini/mod/m_cfg"
-	"github.com/rskv-p/mini/mod/m_db"
-	"github.com/rskv-p/mini/mod/m_log"
-	"github.com/rskv-p/mini/mod/m_rtm"
-	"github.com/rskv-p/mini/mod/m_sys"
+	"github.com/rskv-p/mini/mod/m_api/api_mod"
+	"github.com/rskv-p/mini/mod/m_auth/auth_mod"
+	"github.com/rskv-p/mini/mod/m_bus/bus_mod"
+	"github.com/rskv-p/mini/mod/m_bus/bus_type"
+	"github.com/rskv-p/mini/mod/m_cfg/cfg_mod"
+	"github.com/rskv-p/mini/mod/m_cfg/cfg_type"
+	"github.com/rskv-p/mini/mod/m_db/db_mod"
+	"github.com/rskv-p/mini/mod/m_db/db_type"
+	"github.com/rskv-p/mini/mod/m_log/log_mod"
+	"github.com/rskv-p/mini/mod/m_log/log_type"
+	"github.com/rskv-p/mini/mod/m_rtm/rtm_mod"
+	"github.com/rskv-p/mini/mod/m_sys/sys_mod"
 	"github.com/rskv-p/mini/typ"
 )
 
@@ -22,7 +26,7 @@ type Service struct {
 }
 
 // New creates a new service and automatically registers built-in services.
-func New(name string, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) *Service {
+func New(name string, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) *Service {
 	s := &Service{
 		Name:    name,
 		Modules: []typ.IModule{},
@@ -48,7 +52,7 @@ func (s *Service) Start() error {
 	for _, mod := range s.Modules {
 		// Ensure each module's start method is called (if implemented)
 		if err := mod.Start(); err != nil {
-			return fmt.Errorf("error starting module '%s': %v", mod.Name(), err)
+			return fmt.Errorf("error starting module '%s': %v", mod.GetName(), err)
 		}
 	}
 	return nil
@@ -58,7 +62,7 @@ func (s *Service) Start() error {
 func (s *Service) Stop() error {
 	for _, mod := range s.Modules {
 		if err := mod.Stop(); err != nil {
-			return fmt.Errorf("error stopping module '%s': %v", mod.Name(), err)
+			return fmt.Errorf("error stopping module '%s': %v", mod.GetName(), err)
 		}
 	}
 	return nil
@@ -88,38 +92,38 @@ func (s *Service) GetModules() []typ.IModule {
 // BuildInModules
 //---------------------
 
-var BuildInModules = []func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule{
-	func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule {
-		return m_api.NewApiModule(service)
+var BuildInModules = []func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule{
+	func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule {
+		return api_mod.NewApiModule(service)
 	}, // m_api
 
-	func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule {
-		return m_auth.NewMAuthModule(service, dbClient, logClient) // m_auth
+	func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule {
+		return auth_mod.NewMAuthModule(service, dbClient, logClient) // m_auth
 	},
 
-	func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule {
-		return m_cfg.NewConfigModule(service, nil, logClient) // m_cfg
+	func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule {
+		return cfg_mod.NewConfigModule(service, nil, logClient) // m_cfg
 	},
 
-	func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule {
-		return m_bus.NewBusModule(service, nil, logClient) // m_bus
+	func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule {
+		return bus_mod.NewBusModule(service, nil, logClient) // m_bus
 	},
 
-	func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule {
-		return m_db.NewDBModule(service, nil, logClient) // m_db
+	func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule {
+		return db_mod.NewDBModule(service, nil, logClient) // m_db
 	},
 
-	// This is where the types need to match: use busClient and cfgClient for m_log.NewLogModule
-	func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule {
-		return m_log.NewLogModule(service, busClient, cfgClient) // m_log
+	// This is where the types need to match: use busClient and cfgClient for log_mod.NewLogModule
+	func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule {
+		return log_mod.NewLogModule(service, busClient, cfgClient) // m_log
 	},
 
-	func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule {
-		return m_rtm.NewRuntimeModule(service, logClient) // m_rtm
+	func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule {
+		return rtm_mod.NewRuntimeModule(service, logClient) // m_rtm
 	},
 
-	func(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) typ.IModule {
-		return m_sys.NewSystemModule(service, logClient) // m_sys
+	func(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) typ.IModule {
+		return sys_mod.NewSystemModule(service, logClient) // m_sys
 	},
 
 	// Add other modules here similarly
@@ -127,7 +131,7 @@ var BuildInModules = []func(service typ.IService, dbClient typ.IDBClient, logCli
 
 // RegisterBuildInModules registers all built-in modules.
 // RegisterBuildInModules registers all built-in modules.
-func RegisterBuildInModules(service typ.IService, dbClient typ.IDBClient, logClient typ.ILogClient, busClient typ.IBusClient, cfgClient typ.IConfigClient) error {
+func RegisterBuildInModules(service typ.IService, dbClient db_type.IDBClient, logClient log_type.ILogClient, busClient bus_type.IBusClient, cfgClient cfg_type.IConfigClient) error {
 	for _, newModule := range BuildInModules {
 		// Create the module by passing the necessary clients and the IService
 		module := newModule(service, dbClient, logClient, busClient, cfgClient)

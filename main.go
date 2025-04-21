@@ -3,21 +3,26 @@ package main
 import (
 	"log"
 
-	"github.com/rskv-p/mini/pkg/x_bus"
-	"github.com/rskv-p/mini/pkg/x_cfg"
-	"github.com/rskv-p/mini/pkg/x_db"
-	"github.com/rskv-p/mini/pkg/x_log"
-	"github.com/rskv-p/mini/pkg/x_req"
+	"github.com/rskv-p/mini/mod/m_bus/bus_core"
+	"github.com/rskv-p/mini/mod/m_bus/bus_req"
+	"github.com/rskv-p/mini/mod/m_bus/bus_type"
+	"github.com/rskv-p/mini/mod/m_cfg/cfg_client"
+	"github.com/rskv-p/mini/mod/m_db/db_client"
+	"github.com/rskv-p/mini/mod/m_log/log_client"
 )
 
 func main() {
-	// Initialize the bus
-	bus := x_bus.NewBus(false, "11111")
+	clientFactory := func(id uint64, bus bus_type.IBus) bus_type.IBusClient {
+		return db_client.NewClient(id, bus.(*bus_core.Bus)) // Используйте вашу реализацию клиента
+	}
+
+	// Initialize the bus with the client factory
+	bus := bus_core.NewBus(false, "11111", clientFactory)
 
 	// Create the clients
-	dbClient := x_db.NewClient(1, bus)
-	logClient := x_log.NewClient(2, bus)
-	cfgClient := x_cfg.NewClient(3, bus)
+	dbClient := db_client.NewClient(1, bus)
+	logClient := log_client.NewClient(2, bus)
+	cfgClient := cfg_client.NewClient(3, bus)
 
 	// Set up message handlers for each client to process messages
 	// Subscribing to the correct subjects only
@@ -37,7 +42,7 @@ func main() {
 	}
 
 	// Define custom message handlers
-	cfgClient.HandleMessage = func(req *x_req.Request) {
+	cfgClient.HandleMessage = func(req *bus_req.Request) {
 		log.Printf("Custom handler for Config Client - Subject: %s, Data: %s", req.Subject, string(req.Data))
 	}
 
