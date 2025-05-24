@@ -1,4 +1,3 @@
-// file: mini/recover/recover.go
 package recover
 
 import (
@@ -18,14 +17,12 @@ const (
 	tagLabel    = "label"
 )
 
-// ----------------------------------------------------
-// Global panic hook (optional)
-// ----------------------------------------------------
+var (
+	OnPanic func(service, function string, recovered any)
+	log     logger.ILogger = logger.NewLogger("recover", "warn")
+)
 
-var OnPanic func(service, function string, recovered any)
-var log logger.ILogger = logger.NewLogger("recover", "warn")
-
-// SetLogger allows injecting a custom logger instance (e.g. for tracing or testing).
+// SetLogger allows injecting a custom logger instance.
 func SetLogger(l logger.ILogger) {
 	log = l
 }
@@ -35,8 +32,10 @@ func SetLogger(l logger.ILogger) {
 // ----------------------------------------------------
 
 // RecoverWithContext captures and logs a panic with metadata and optional data.
-func RecoverWithContext(service, function string, data any) {
+func RecoverWithContext(service, function string, data any) error {
 	if r := recover(); r != nil {
+		stack := string(debug.Stack())
+
 		log.With(tagService, service).
 			With(tagFunction, function).
 			Error("panic: %v", r)
@@ -45,12 +44,15 @@ func RecoverWithContext(service, function string, data any) {
 			log.With(tagContext, fmt.Sprintf("%+v", data)).Error("panic context")
 		}
 
-		log.Error("stacktrace:\n%s", string(debug.Stack()))
+		log.Error("stacktrace:\n%s", stack)
 
 		if OnPanic != nil {
 			OnPanic(service, function, r)
 		}
+
+		return fmt.Errorf("panic recovered in %s.%s: %v", service, function, r)
 	}
+	return nil
 }
 
 // RecoverExplicit logs a known recovered panic with metadata and context.
@@ -58,6 +60,8 @@ func RecoverExplicit(service, function string, recovered any, data any) {
 	if recovered == nil {
 		return
 	}
+
+	stack := string(debug.Stack())
 
 	log.With(tagService, service).
 		With(tagFunction, function).
@@ -67,7 +71,7 @@ func RecoverExplicit(service, function string, recovered any, data any) {
 		log.With(tagContext, fmt.Sprintf("%+v", data)).Error("panic context")
 	}
 
-	log.Error("stacktrace:\n%s", string(debug.Stack()))
+	log.Error("stacktrace:\n%s", stack)
 
 	if OnPanic != nil {
 		OnPanic(service, function, recovered)
@@ -78,14 +82,31 @@ func RecoverExplicit(service, function string, recovered any, data any) {
 func Safe(label string, fn func()) {
 	defer func() {
 		if r := recover(); r != nil {
+			stack := string(debug.Stack())
 			log.With(tagLabel, label).Error("panic: %v", r)
-			log.Error("stacktrace:\n%s", string(debug.Stack()))
+			log.Error("stacktrace:\n%s", stack)
 			if OnPanic != nil {
 				OnPanic("Safe", label, r)
 			}
 		}
 	}()
 	fn()
+}
+
+// RecoverFunc is like Safe but returns error on panic.
+func RecoverFunc(label string, fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := string(debug.Stack())
+			log.With(tagLabel, label).Error("panic: %v", r)
+			log.Error("stacktrace:\n%s", stack)
+			if OnPanic != nil {
+				OnPanic("RecoverFunc", label, r)
+			}
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return fn()
 }
 
 // ----------------------------------------------------
@@ -95,13 +116,27 @@ func Safe(label string, fn func()) {
 // RecoverHandler wraps a router.Handler with panic recovery.
 func RecoverHandler(service, function string, next router.Handler) router.Handler {
 	return func(ctx context.Context, msg codec.IMessage, replyTo string) *router.Error {
-		defer RecoverWithContext(service, function, msg)
+		defer func() {
+			if r := recover(); r != nil {
+				stack := string(debug.Stack())
+
+				log.With(tagService, service).
+					With(tagFunction, function).
+					Error("panic: %v", r)
+				log.With(tagContext, fmt.Sprintf("%+v", msg)).Error("panic context")
+				log.Error("stacktrace:\n%s", stack)
+
+				if OnPanic != nil {
+					OnPanic(service, function, r)
+				}
+			}
+		}()
 		return next(ctx, msg, replyTo)
 	}
 }
 
 // ----------------------------------------------------
-// Universal wrapper
+// Universal context function wrapper
 // ----------------------------------------------------
 
 // RecoverableFunc is a context-aware function that may panic.
@@ -112,7 +147,17 @@ func WrapRecover(service, function string, f RecoverableFunc) RecoverableFunc {
 	return func(ctx context.Context) (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				RecoverWithContext(service, function, nil)
+				stack := string(debug.Stack())
+
+				log.With(tagService, service).
+					With(tagFunction, function).
+					Error("panic: %v", r)
+				log.Error("stacktrace:\n%s", stack)
+
+				if OnPanic != nil {
+					OnPanic(service, function, r)
+				}
+
 				err = fmt.Errorf("panic recovered in %s.%s: %v", service, function, r)
 			}
 		}()
