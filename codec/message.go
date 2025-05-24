@@ -1,12 +1,12 @@
-// file: mini/codec/codec.go
 package codec
 
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"strconv"
 )
+
+// Ensure Message implements IMessage.
+var _ IMessage = (*Message)(nil)
 
 // IMessage defines the contract for transport messages.
 type IMessage interface {
@@ -42,12 +42,11 @@ type IMessage interface {
 	SetError(err error)
 	GetError() string
 	HasError() bool
-
 	Copy() IMessage
+	Validate() error
 }
 
-var _ IMessage = (*Message)(nil)
-
+// Message is the standard message format for transport.
 type Message struct {
 	Type       string            `json:"type,omitempty"`
 	Node       string            `json:"node,omitempty"`
@@ -60,8 +59,48 @@ type Message struct {
 }
 
 // ----------------------------------------------------
-// IMessage Implementation
+// Constructors
 // ----------------------------------------------------
+
+// NewMessage creates a new empty message of a given type.
+func NewMessage(t string) *Message {
+	return &Message{
+		Type:    t,
+		Body:    make(map[string]any),
+		Headers: make(map[string]string),
+	}
+}
+
+// NewRequest creates a new request message for a given node and contextID.
+func NewRequest(node, contextID string) *Message {
+	return &Message{
+		Type:      "request",
+		Node:      node,
+		ContextID: contextID,
+		Body:      make(map[string]any),
+		Headers:   make(map[string]string),
+	}
+}
+
+// NewResponse creates a new response message with status code.
+func NewResponse(contextID string, status int) *Message {
+	return &Message{
+		Type:       "response",
+		ContextID:  contextID,
+		StatusCode: status,
+		Body:       make(map[string]any),
+		Headers:    make(map[string]string),
+	}
+}
+
+// NewJsonResponse creates a response message and precomputes RawBody.
+func NewJsonResponse(contextID string, status int) *Message {
+	m := NewResponse(contextID, status)
+	_ = m.UpdateRawBody()
+	return m
+}
+
+// Getters and setters
 
 func (m *Message) GetType() string        { return m.Type }
 func (m *Message) SetType(t string)       { m.Type = t }
@@ -71,6 +110,7 @@ func (m *Message) GetContextID() string   { return m.ContextID }
 func (m *Message) SetContextID(id string) { m.ContextID = id }
 func (m *Message) GetReplyTo() string     { return m.ReplyTo }
 func (m *Message) SetReplyTo(r string)    { m.ReplyTo = r }
+
 func (m *Message) GetHeaders() map[string]string {
 	if m.Headers == nil {
 		m.Headers = make(map[string]string)
@@ -89,6 +129,9 @@ func (m *Message) GetHeader(key string) string {
 	}
 	return m.Headers[key]
 }
+
+// Body access
+
 func (m *Message) GetBodyMap() map[string]any {
 	if m.Body == nil {
 		m.Body = make(map[string]any)
@@ -104,30 +147,6 @@ func (m *Message) Set(key string, value any) {
 func (m *Message) Get(key string) (any, bool) {
 	v, ok := m.GetBodyMap()[key]
 	return v, ok
-}
-
-func (m *Message) GetString(key string) string {
-	v, _ := m.Get(key)
-	s, _ := toString(v)
-	return s
-}
-
-func (m *Message) GetInt(key string) int64 {
-	v, _ := m.Get(key)
-	i, _ := toInt64(v)
-	return i
-}
-
-func (m *Message) GetFloat(key string) float64 {
-	v, _ := m.Get(key)
-	f, _ := toFloat64(v)
-	return f
-}
-
-func (m *Message) GetBool(key string) bool {
-	v, _ := m.Get(key)
-	b, _ := toBool(v)
-	return b
 }
 
 func (m *Message) SetBody(obj any) {
@@ -149,6 +168,8 @@ func (m *Message) SetBody(obj any) {
 	m.RawBody = nil
 }
 
+// Raw body
+
 func (m *Message) GetRawBody() []byte {
 	if m.RawBody == nil && len(m.Body) > 0 {
 		_ = m.UpdateRawBody()
@@ -164,6 +185,8 @@ func (m *Message) UpdateRawBody() error {
 	m.RawBody = b
 	return nil
 }
+
+// Result/Error
 
 func (m *Message) SetResult(value any) {
 	m.Set("result", value)
@@ -199,6 +222,7 @@ func (m *Message) HasError() bool {
 	return ok && s != ""
 }
 
+// Copy returns a deep copy of the message.
 func (m *Message) Copy() IMessage {
 	if m == nil {
 		return nil
@@ -219,40 +243,7 @@ func (m *Message) Copy() IMessage {
 	return &clone
 }
 
-// ----------------------------------------------------
-// Constructors
-// ----------------------------------------------------
-
-func NewMessage(t string) *Message {
-	return &Message{Type: t, Body: map[string]any{}, Headers: map[string]string{}}
-}
-
-func NewRequest(node, contextID string) *Message {
-	return &Message{
-		Type:      "request",
-		Node:      node,
-		ContextID: contextID,
-		Body:      map[string]any{},
-		Headers:   map[string]string{},
-	}
-}
-
-func NewResponse(contextID string, status int) *Message {
-	return &Message{
-		Type:       "response",
-		ContextID:  contextID,
-		StatusCode: status,
-		Body:       map[string]any{},
-		Headers:    map[string]string{},
-	}
-}
-
-func NewJsonResponse(contextID string, status int) *Message {
-	m := NewResponse(contextID, status)
-	_ = m.UpdateRawBody()
-	return m
-}
-
+// Validate checks required fields.
 func (m *Message) Validate() error {
 	if m.Type == "" {
 		return errors.New("missing Type")
@@ -264,89 +255,4 @@ func (m *Message) Validate() error {
 		return errors.New("missing ContextID")
 	}
 	return nil
-}
-
-// ----------------------------------------------------
-// Type conversions
-// ----------------------------------------------------
-
-func toString(v any) (string, bool) {
-	switch x := v.(type) {
-	case string:
-		return x, true
-	case []byte:
-		return string(x), true
-	case int:
-		return strconv.Itoa(x), true
-	case int64:
-		return strconv.FormatInt(x, 10), true
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64), true
-	case bool:
-		return strconv.FormatBool(x), true
-	default:
-		b, err := json.Marshal(x)
-		return string(b), err == nil
-	}
-}
-
-func toInt64(v any) (int64, bool) {
-	switch x := v.(type) {
-	case int:
-		return int64(x), true
-	case int64:
-		return x, true
-	case float64:
-		return int64(x), true
-	case string:
-		i, err := strconv.ParseInt(x, 10, 64)
-		return i, err == nil
-	}
-	return 0, false
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case string:
-		f, err := strconv.ParseFloat(x, 64)
-		return f, err == nil
-	}
-	return 0, false
-}
-
-func toBool(v any) (bool, bool) {
-	switch x := v.(type) {
-	case bool:
-		return x, true
-	case string:
-		b, err := strconv.ParseBool(x)
-		return b, err == nil
-	}
-	return false, false
-}
-
-// ----------------------------------------------------
-// JSON helpers
-// ----------------------------------------------------
-
-func Marshal(v any) ([]byte, error) {
-	return json.Marshal(v)
-}
-
-func Unmarshal(data []byte, v any) error {
-	return json.Unmarshal(data, v)
-}
-
-func MustMarshal(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("marshal error: %v", err))
-	}
-	return b
 }
