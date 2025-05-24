@@ -1,11 +1,11 @@
-// file: arc/service/transport/middle.go
+// file: mini/transport/middle.go
 package transport
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/rskv-p/mini/service/codec"
+	"github.com/rskv-p/mini/codec"
 )
 
 // ----------------------------------------------------

@@ -1,4 +1,4 @@
-// file: arc/service/health.go
+// file: mini/health.go
 package service
 
 import (
@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/rskv-p/mini/service/config"
-	"github.com/rskv-p/mini/service/constant"
+	"github.com/rskv-p/mini/config"
+	"github.com/rskv-p/mini/constant"
 
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/load"

@@ -1,4 +1,4 @@
-// file: arc/service/selector/strategy.go
+// file: mini/selector/strategy.go
 package selector
 
 import (
@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rskv-p/mini/service/registry"
+	"github.com/rskv-p/mini/registry"
 )
 
 // ----------------------------------------------------

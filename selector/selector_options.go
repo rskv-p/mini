@@ -1,4 +1,4 @@
-// file: arc/service/selector/selector_options.go
+// file: mini/selector/selector_options.go
 package selector
 
 import "time"

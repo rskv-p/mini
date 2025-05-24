@@ -1,4 +1,4 @@
-// file: arc/service/service.go
+// file: mini/service.go
 package service
 
 import (
@@ -10,13 +10,13 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/rskv-p/mini/service/codec"
-	"github.com/rskv-p/mini/service/config"
-	"github.com/rskv-p/mini/service/logger"
-	"github.com/rskv-p/mini/service/registry"
-	"github.com/rskv-p/mini/service/router"
-	"github.com/rskv-p/mini/service/selector"
-	"github.com/rskv-p/mini/service/transport"
+	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/config"
+	"github.com/rskv-p/mini/logger"
+	"github.com/rskv-p/mini/registry"
+	"github.com/rskv-p/mini/router"
+	"github.com/rskv-p/mini/selector"
+	"github.com/rskv-p/mini/transport"
 
 	"github.com/google/uuid"
 )

@@ -1,4 +1,4 @@
-// file: arc/service/recover/recover.go
+// file: mini/recover/recover.go
 package recover
 
 import (
@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/rskv-p/mini/service/codec"
-	"github.com/rskv-p/mini/service/logger"
-	"github.com/rskv-p/mini/service/router"
+	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/logger"
+	"github.com/rskv-p/mini/router"
 )
 
 const (

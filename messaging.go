@@ -1,13 +1,13 @@
-// file: arc/service/messaging.go
+// file: mini/messaging.go
 package service
 
 import (
 	"errors"
 	"time"
 
-	"github.com/rskv-p/mini/service/codec"
-	"github.com/rskv-p/mini/service/constant"
-	"github.com/rskv-p/mini/service/transport"
+	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/constant"
+	"github.com/rskv-p/mini/transport"
 )
 
 // Respond publishes a response and removes the context entry.

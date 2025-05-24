@@ -1,4 +1,4 @@
-// file: arc/service/metrics.go
+// file: mini/metrics.go
 package service
 
 import (

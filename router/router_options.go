@@ -1,10 +1,10 @@
-// file: arc/service/router/router_options.go
+// file: mini/router/router_options.go
 package router
 
 import (
 	"context"
 
-	"github.com/rskv-p/mini/service/codec"
+	"github.com/rskv-p/mini/codec"
 )
 
 // ----------------------------------------------------

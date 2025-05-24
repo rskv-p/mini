@@ -1,4 +1,4 @@
-// file: arc/service/codec/codec.go
+// file: mini/codec/codec.go
 package codec
 
 import (

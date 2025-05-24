@@ -1,4 +1,4 @@
-// file: arc/service/transport/transport_options.go
+// file: mini/transport/transport_options.go
 package transport
 
 import (
@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rskv-p/mini/service/logger"
+	"github.com/rskv-p/mini/logger"
 )
 
 // ----------------------------------------------------

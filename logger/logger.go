@@ -1,4 +1,4 @@
-// file: arc/service/logger/logger.go
+// file: mini/logger/logger.go
 package logger
 
 import (

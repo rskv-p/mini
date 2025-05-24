@@ -1,4 +1,4 @@
-// file: arc/service/transport/conn.go
+// file: mini/transport/conn.go
 package transport
 
 import (
@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rskv-p/mini/service/codec"
+	"github.com/rskv-p/mini/codec"
 
 	"github.com/google/uuid"
 	"github.com/nsqio/go-nsq"

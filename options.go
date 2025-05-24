@@ -1,16 +1,16 @@
-// file: arc/service/options.go
+// file: mini/options.go
 package service
 
 import (
 	"time"
 
-	"github.com/rskv-p/mini/service/codec"
-	"github.com/rskv-p/mini/service/context"
-	"github.com/rskv-p/mini/service/logger"
-	"github.com/rskv-p/mini/service/registry"
-	"github.com/rskv-p/mini/service/router"
-	"github.com/rskv-p/mini/service/selector"
-	"github.com/rskv-p/mini/service/transport"
+	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/context"
+	"github.com/rskv-p/mini/logger"
+	"github.com/rskv-p/mini/registry"
+	"github.com/rskv-p/mini/router"
+	"github.com/rskv-p/mini/selector"
+	"github.com/rskv-p/mini/transport"
 )
 
 // ----------------------------------------------------

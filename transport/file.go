@@ -1,4 +1,4 @@
-// file: arc/service/transport/file.go
+// file: mini/transport/file.go
 package transport
 
 import (
@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rskv-p/mini/service/codec"
-	"github.com/rskv-p/mini/service/constant"
+	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/constant"
 )
 
 // ----------------------------------------------------

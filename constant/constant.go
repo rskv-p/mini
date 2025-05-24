@@ -1,4 +1,4 @@
-// file: arc/service/constant/constant.go
+// file: mini/constant/constant.go
 package constant
 
 import "errors"

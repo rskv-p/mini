@@ -1,4 +1,4 @@
-// file: arc/service/actions.go
+// file: mini/actions.go
 package service
 
 import (
@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/rskv-p/mini/service/codec"
-	"github.com/rskv-p/mini/service/router"
+	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/router"
 )
 
 type contextKey string

@@ -1,15 +1,15 @@
-// file: arc/service/handler.go
+// file: mini/handler.go
 package service
 
 import (
 	dcont "context"
 	"errors"
 
-	"github.com/rskv-p/mini/service/codec"
-	"github.com/rskv-p/mini/service/constant"
-	"github.com/rskv-p/mini/service/context"
-	"github.com/rskv-p/mini/service/recover"
-	"github.com/rskv-p/mini/service/router"
+	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/constant"
+	"github.com/rskv-p/mini/context"
+	"github.com/rskv-p/mini/recover"
+	"github.com/rskv-p/mini/router"
 )
 
 // ServerHandler processes incoming transport messages.

@@ -1,4 +1,4 @@
-// file: arc/service/router/router.go
+// file: mini/router/router.go
 package router
 
 import (
@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rskv-p/mini/service/codec"
-	"github.com/rskv-p/mini/service/constant"
+	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/constant"
 )
 
 var _ IRouter = (*Router)(nil)

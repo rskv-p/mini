@@ -1,4 +1,4 @@
-// file: arc/service/config/config.go
+// file: mini/config/config.go
 package config
 
 import (

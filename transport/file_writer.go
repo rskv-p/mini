@@ -1,4 +1,4 @@
-// file: arc/service/transport/file_writer.go
+// file: mini/transport/file_writer.go
 package transport
 
 import (

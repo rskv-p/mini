@@ -1,4 +1,4 @@
-// file: arc/service/transport/transport.go
+// file: mini/transport/transport.go
 package transport
 
 import (
@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rskv-p/mini/service/codec"
+	"github.com/rskv-p/mini/codec"
 )
 
 var (

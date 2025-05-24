@@ -1,14 +1,14 @@
 
-# 🧩 `arc/service` — Core Utilities for Modular Microservices
+# 🧩 `mini` — Core Utilities for Modular Microservices
 
-The `service/` package provides a suite of reusable building blocks for message-based, modular microservices. It includes NSQ-powered transport, dynamic routing, in-memory service registry, error recovery, and structured logging.
+The `mini/` package provides a suite of reusable building blocks for message-based, modular microservices. It includes NSQ-powered transport, dynamic routing, in-memory service registry, error recovery, and structured logging.
 
 ---
 
 ## 📦 Directory Structure
 
 ```text
-service/
+mini/
 ├── codec/       # Standardized message format
 ├── config/      # Configuration loading and defaults
 ├── constant/    # Shared constants and error definitions
@@ -176,12 +176,3 @@ func main() {
 * Retry support and circuit-breaker-style hooks
 * File streaming and context-bound responses
 * Extensible registry/selector/router abstraction layers
-
----
-
-## 📍 Roadmap / Ideas
-
-* [ ] TLS, compression, and auth for NSQ Conn
-* [ ] Define `IService` combining router + transport + registry
-* [ ] Pluggable registry backends (Redis, etcd)
-* [ ] Add benchmark and integration tests
