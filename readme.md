@@ -1,192 +1,187 @@
 
-# **Mini Framework** ![Go](https://cdn.jsdelivr.net/gh/golang/logo@master/256/golang-logo.png)
+# 🧩 `arc/service` — Core Utilities for Modular Microservices
 
-The **Mini Framework** is a modular application framework designed to simplify the development and scaling of your services. With a clean separation of concerns, it lets you build robust systems through **modules**—each containing **actions** that encapsulate the business logic. You can effortlessly manage services, handle APIs, interact with databases, and facilitate communication between services. 
-
----
-
-## **Table of Contents** 📑
-1. [Introduction](#introduction)
-2. [Features](#features)
-3. [Architecture](#architecture)
-4. [Modules](#modules)
-5. [Service Lifecycle](#service-lifecycle)
-6. [How to Use](#how-to-use)
-7. [API Documentation](#api-documentation)
-8. [Running the Application](#running-the-application)
-9. [Contributing](#contributing)
-10. [License](#license)
+The `service/` package provides a suite of reusable building blocks for message-based, modular microservices. It includes NSQ-powered transport, dynamic routing, in-memory service registry, error recovery, and structured logging.
 
 ---
 
-## **Introduction** 
+## 📦 Directory Structure
 
-The **Mini Framework** provides an intuitive and modular approach to developing microservices. It integrates essential services like database management, messaging, logging, and authentication into self-contained modules. Each module houses actions (business logic), allowing you to dynamically load, initialize, and execute them to streamline your service development.
-
----
-
-## **Features** 
-
-- **Modular Design**: Encapsulates features like database management, API handling, and authentication into easily manageable modules.
-- **Action-Based Logic**: Exposes actions as simple functions that execute business tasks, making them reusable and composable.
-- **Service Lifecycle**: Seamlessly manage the startup and shutdown of services and modules, ensuring smooth operation.
-- **Dynamic API Exposure**: Automatically exposes actions as APIs over HTTP, allowing quick integration with other services.
-- **Database Integration**: Integrates with databases like SQLite and PostgreSQL via GORM ORM.
-- **Inter-Service Communication**: Supports communication between services through a publish/subscribe bus.
-- **Authentication & Authorization**: Built-in user authentication and role management.
-
----
-
-## **Architecture** 
-
-The **Mini Framework** follows a **three-tier architecture** for simplicity and scalability:
-
-1. **Service**: The entry point to your application, responsible for initializing and managing modules.
-2. **Module**: A self-contained unit that encapsulates related business logic and can contain multiple actions.
-3. **Action**: The atomic units of work within a module that execute the actual business logic.
-
-### **Service → Module → Action**
-
-- **Service**: Starts and manages modules.
-- **Module**: Defines the business logic for specific application functions (e.g., authentication, database).
-- **Action**: Executes the specific tasks, such as creating a user or sending a message.
+```text
+service/
+├── codec/       # Standardized message format
+├── config/      # Configuration loading and defaults
+├── constant/    # Shared constants and error definitions
+├── context/     # Request lifecycle manager (conversation context)
+├── logger/      # Structured leveled logger
+├── recover/     # Safe function execution and panic recovery
+├── registry/    # In-memory service registry
+├── router/      # Declarative message routing with validation
+├── selector/    # Service node selection strategies
+└── transport/   # NSQ-based transport: publish, request, file streams
+````
 
 ---
 
-## **Modules** 
+## 📡 `transport/`
 
-The **Mini Framework** comes pre-packaged with the following modules:
+Message transport layer over NSQ.
 
-1. **`m_api`**: API management system for exposing actions over HTTP.
-2. **`m_db`**: Database module for handling database operations using GORM.
-3. **`m_bus`**: Messaging bus for inter-service communication using the publish/subscribe pattern.
-4. **`m_log`**: Logging module for structured logging across services.
-5. **`m_auth`**: User authentication and role management.
-6. **`m_rtm`**: Runtime module for executing actions in various environments (e.g., Go, JavaScript).
-7. **`m_cfg`**: Configuration management module to manage and publish configuration data.
+* `Transport` (implements `ITransport`) supports:
 
-Modules are extendable, and you can easily create new ones to fit your specific requirements.
+  * `Publish`, `Request`, `Respond`, `Broadcast`
+  * `Subscribe`, `SubscribeTopic`, `SubscribePrefix`
+  * Retry policies, tracing, middleware
+* File chunking support via `SendFile` and `ReceiveFileRouter`
+* Underlying `Conn` abstracts NSQ producer/consumer + reply channels
 
 ---
 
-## **Service Lifecycle** 
+## 📨 `codec/`
 
-The lifecycle of the service consists of two main stages:
+Unified `Message` structure for all communications:
 
-1. **Start**: 
-   - Initializes and configures all modules.
-   - Registers actions and sets up necessary resources (e.g., database connections, API server).
-   
-2. **Stop**: 
-   - Gracefully shuts down all modules.
-   - Cleans up resources (e.g., closes database connections).
+* Standard fields: `Type`, `Node`, `ContextID`, `ReplyTo`
+* `Header`: for metadata (e.g., trace IDs, message type)
+* `Body`: dynamic JSON content with typed accessors (`GetString`, `GetInt`, etc.)
+* `RawBody`: raw JSON fallback
+* Helpers: `SetResult`, `SetError`, `Validate`, `Copy`, etc.
 
 ---
 
-## **How to Use** 
+## 🔒 `constant/`
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/your-repo/mini.git
-   cd mini
-   ```
+Shared constants and standardized error definitions:
 
-2. **Install dependencies**:
-   Follow setup instructions for your environment (e.g., Go, GORM).
-
-3. **Create a new module**:
-   A module bundles related actions. Here’s an example:
-
-   ```go
-   package m_example
-
-   import (
-     "fmt"
-     "github.com/rskv-p/mini/act"
-     "github.com/rskv-p/mini/typ"
-   )
-
-   func ExampleModule() typ.IModule {
-     return &mod.Module{
-       ModName: "example",
-       Acts: []act_type.ActionDef{
-         {
-           Name: "example.action",
-           Func: func(a act_type.IAction) any {
-             return "This is an example action"
-           },
-         },
-       },
-     }
-   }
-   ```
-
-4. **Register the module** in `main.go`:
-
-   ```go
-   import "github.com/rskv-p/mini/mod/m_example"
-   
-   service := &srv.Service{
-     Name: "ExampleService",
-   }
-
-   service.AddModule(m_example.ExampleModule())
-
-   if err := service.Start(); err != nil {
-     log.Fatalf("Error starting service: %v", err)
-   }
-   ```
-
-5. **Define Actions**:
-   Actions represent the core business logic. Example:
-   
-   ```go
-   func ExampleAction(a act_type.IAction) any {
-     action, _ := a.(*act.Action)
-     return fmt.Sprintf("Hello %s!", action.InputString(0))
-   }
-   ```
+* Message types: `request`, `response`, `stream`, `event`
+* Common errors: `ErrNotFound`, `ErrEmptyMessage`, `ErrInvalidPath`
+* Standard keys: `result`, `error`, `input`
+* Max file chunk size, health status flags, and internal status codes
 
 ---
 
-## **API Documentation** 
+## 🧠 `context/`
 
-API endpoints are automatically generated based on the registered modules and actions. You can invoke any registered action via HTTP requests. For example, the `m_api` module exposes all actions at `/api/<action_name>`.
+Manages conversation lifecycle (`ContextID` → `Conversation`):
 
----
-
-## **Running the Application** 
-
-1. **Start the Service**:
-   ```bash
-   go run main.go
-   ```
-
-2. **Test the API**:
-   Access your API at `http://localhost:8080/api/`. Example:
-
-   - `GET /api/example.action` triggers the `example.action` from the `m_example` module.
+* Methods: `Add`, `Get`, `Done`, `WaitTimeout`, `Range`
+* Supports auto-deletion and custom hooks (`onAdd`, `onDelete`)
+* Used for managing response expectations via `ContextID`
 
 ---
 
-## **Contributing** 
+## 🔧 `config/`
 
-We welcome contributions to the Mini Framework! Here's how you can help:
+Configuration loader with support for:
 
-- **Fork** the repository.
-- Create a **new branch** for your changes.
-- Submit a **pull request** with a detailed description of the changes.
-  
-Please include:
-- Clear documentation.
-- Unit tests to verify the functionality.
+* JSON config files with env var injection (`${VAR}`)
+* Environment variable fallbacks (`SRV_*`)
+* `Config` structure includes:
 
----
-
-## **License** 
-
-The Mini Framework is open-source and distributed under the MIT License.
+  * Global options: `ServiceName`, `LogLevel`, `Port`, etc.
+  * NSQ settings: TCP/HTTP address, queue size, buffer, etc.
+* Includes `Validate()`, `Dump()`, and default loaders
 
 ---
 
-For any further questions or clarifications, feel free to reach out. We’re happy to help! 😄
+## 🪵 `logger/`
+
+Structured logging engine with levels and context:
+
+* Interface: `ILogger`
+
+  * `Debug`, `Info`, `Warn`, `Error`
+  * `WithContext(traceID)`, `With(key, value)`
+  * Level filtering (`SetLevel("warn")`)
+* Built-in formatting with sorted metadata
+
+---
+
+## 🔁 `registry/`
+
+In-memory service registry for discovery:
+
+* `Register`, `Deregister`, `GetService`, `ListServices`
+* TTL-based cleanup of stale nodes
+* Support for watchers (reactive updates on registry changes)
+* Dumps current state for diagnostics
+
+---
+
+## 🎯 `selector/`
+
+Picks a service node using strategies and filters:
+
+* Strategies: `RoundRobin`, `Random`, `First`
+* Filters: match metadata (`MatchMeta`)
+* Uses internal cache (`cacheTTL`) to reduce registry calls
+
+---
+
+## 🚦 `router/`
+
+Declarative routing engine for incoming messages:
+
+* Interfaces:
+
+  * `IRouter` for dynamic route registration
+  * `IAction` for declarative actions with validation
+* Features:
+
+  * `RegisterActions`, `Dispatch`, `Add`, `Deregister`
+  * Middleware support (`HandlerWrapper`)
+  * Input validation: `required`, `min`, `max` with custom error messages
+* Error hook (`OnErrorHook`) and not-found handler (`OnNotFound`)
+
+---
+
+## 🛡️ `recover/`
+
+Utilities for safe execution and panic recovery:
+
+* `RecoverHandler()` for safe routing
+* `Safe(label, fn)` for safe goroutines
+* `WrapRecover()` for context-aware functions
+* Custom `OnPanic` hook for global crash tracking
+
+---
+
+## 🔗 Example
+
+```go
+import (
+    "github.com/rskv-p/mini/service/transport"
+    "github.com/rskv-p/mini/service/logger"
+)
+
+func main() {
+    log := logger.NewLogger("auth", "debug")
+    t := transport.New(
+        transport.Addrs("127.0.0.1:4150"),
+        transport.Subject("auth"),
+        transport.WithLogger(log),
+        transport.WithDebug(),
+    )
+    _ = t.Init()
+    // ...
+}
+```
+
+---
+
+## ✅ Features
+
+* In-process transport with NSQ backend
+* Fully typed messages with traceable metadata
+* Retry support and circuit-breaker-style hooks
+* File streaming and context-bound responses
+* Extensible registry/selector/router abstraction layers
+
+---
+
+## 📍 Roadmap / Ideas
+
+* [ ] TLS, compression, and auth for NSQ Conn
+* [ ] Define `IService` combining router + transport + registry
+* [ ] Pluggable registry backends (Redis, etcd)
+* [ ] Add benchmark and integration tests

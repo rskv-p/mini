@@ -1,6 +1,6 @@
 module github.com/rskv-p/mini
 
-go 1.24.1
+go 1.24.2
 
 require (
 	github.com/dop251/goja v0.0.0-20250309171923-bcd7cc6bf64c

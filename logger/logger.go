@@ -1,0 +1,170 @@
+// file: arc/service/logger/logger.go
+package logger
+
+import (
+	"fmt"
+	"log"
+	"sort"
+	"strings"
+)
+
+var _ ILogger = (*Logger)(nil)
+var _ LoggerEntry = (*entry)(nil)
+
+// ----------------------------------------------------
+// Interfaces
+// ----------------------------------------------------
+
+// ILogger defines structured logging methods.
+type ILogger interface {
+	Debug(msg string, args ...any)
+	Info(msg string, args ...any)
+	Warn(msg string, args ...any)
+	Error(msg string, args ...any)
+
+	WithContext(contextID string) ILogger
+	With(key string, value any) LoggerEntry
+	SetLevel(level string)
+	Clone() ILogger
+}
+
+// LoggerEntry is a structured log builder.
+type LoggerEntry interface {
+	With(key string, value any) LoggerEntry
+	Debug(msg string, args ...any)
+	Info(msg string, args ...any)
+	Warn(msg string, args ...any)
+	Error(msg string, args ...any)
+}
+
+// ----------------------------------------------------
+// Logger
+// ----------------------------------------------------
+
+type Logger struct {
+	service   string
+	contextID string
+	level     string
+}
+
+func NewLogger(serviceName, level string) ILogger {
+	return &Logger{
+		service: serviceName,
+		level:   normalizeLevel(level),
+	}
+}
+
+func (l *Logger) SetLevel(level string) {
+	l.level = normalizeLevel(level)
+}
+
+func (l *Logger) WithContext(contextID string) ILogger {
+	return &Logger{
+		service:   l.service,
+		contextID: contextID,
+		level:     l.level,
+	}
+}
+
+func (l *Logger) Clone() ILogger {
+	return &Logger{
+		service:   l.service,
+		contextID: l.contextID,
+		level:     l.level,
+	}
+}
+
+func (l *Logger) With(key string, value any) LoggerEntry {
+	return &entry{
+		parent: l,
+		fields: map[string]any{key: value},
+	}
+}
+
+func (l *Logger) Debug(msg string, args ...any) { l.log("debug", msg, args...) }
+func (l *Logger) Info(msg string, args ...any)  { l.log("info", msg, args...) }
+func (l *Logger) Warn(msg string, args ...any)  { l.log("warn", msg, args...) }
+func (l *Logger) Error(msg string, args ...any) { l.log("error", msg, args...) }
+
+func (l *Logger) log(level, msg string, args ...any) {
+	if !shouldLog(l.level, level) {
+		return
+	}
+	prefix := fmt.Sprintf("[%s][%s]", strings.ToUpper(level), l.service)
+	if l.contextID != "" {
+		prefix += fmt.Sprintf("[ctx:%s]", l.contextID)
+	}
+	log.Printf("%s %s", prefix, fmt.Sprintf(msg, args...))
+}
+
+// ----------------------------------------------------
+// Entry (structured log builder)
+// ----------------------------------------------------
+
+type entry struct {
+	parent *Logger
+	fields map[string]any
+}
+
+func (e *entry) With(key string, value any) LoggerEntry {
+	if e.fields == nil {
+		e.fields = make(map[string]any)
+	}
+	e.fields[key] = value
+	return e
+}
+
+func (e *entry) Debug(msg string, args ...any) { e.log("debug", msg, args...) }
+func (e *entry) Info(msg string, args ...any)  { e.log("info", msg, args...) }
+func (e *entry) Warn(msg string, args ...any)  { e.log("warn", msg, args...) }
+func (e *entry) Error(msg string, args ...any) { e.log("error", msg, args...) }
+
+func (e *entry) log(level, msg string, args ...any) {
+	if !shouldLog(e.parent.level, level) {
+		return
+	}
+
+	prefix := fmt.Sprintf("[%s][%s]", strings.ToUpper(level), e.parent.service)
+	if e.parent.contextID != "" {
+		prefix += fmt.Sprintf("[ctx:%s]", e.parent.contextID)
+	}
+
+	// format fields
+	fieldParts := make([]string, 0, len(e.fields))
+	for k, v := range e.fields {
+		fieldParts = append(fieldParts, fmt.Sprintf("%s=%v", k, v))
+	}
+	sort.Strings(fieldParts)
+
+	meta := ""
+	if len(fieldParts) > 0 {
+		meta = " | " + strings.Join(fieldParts, " ")
+	}
+
+	log.Printf("%s %s%s", prefix, fmt.Sprintf(msg, args...), meta)
+}
+
+// ----------------------------------------------------
+// Helpers
+// ----------------------------------------------------
+
+func normalizeLevel(level string) string {
+	switch strings.ToLower(level) {
+	case "debug", "info", "warn", "error":
+		return strings.ToLower(level)
+	default:
+		return "info"
+	}
+}
+
+func shouldLog(current, incoming string) bool {
+	order := map[string]int{
+		"debug": 1,
+		"info":  2,
+		"warn":  3,
+		"error": 4,
+	}
+	c := order[normalizeLevel(current)]
+	i := order[normalizeLevel(incoming)]
+	return i >= c
+}
