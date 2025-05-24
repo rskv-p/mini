@@ -1,4 +1,3 @@
-// file: mini/logger/logger.go
 package logger
 
 import (
@@ -15,7 +14,6 @@ var _ LoggerEntry = (*entry)(nil)
 // Interfaces
 // ----------------------------------------------------
 
-// ILogger defines structured logging methods.
 type ILogger interface {
 	Debug(msg string, args ...any)
 	Info(msg string, args ...any)
@@ -28,17 +26,35 @@ type ILogger interface {
 	Clone() ILogger
 }
 
-// LoggerEntry is a structured log builder.
 type LoggerEntry interface {
 	With(key string, value any) LoggerEntry
 	Debug(msg string, args ...any)
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
+	Clone() LoggerEntry
 }
 
 // ----------------------------------------------------
-// Logger
+// Constants and levels
+// ----------------------------------------------------
+
+const (
+	LevelDebug = "debug"
+	LevelInfo  = "info"
+	LevelWarn  = "warn"
+	LevelError = "error"
+)
+
+var levelOrder = map[string]int{
+	LevelDebug: 1,
+	LevelInfo:  2,
+	LevelWarn:  3,
+	LevelError: 4,
+}
+
+// ----------------------------------------------------
+// Logger implementation
 // ----------------------------------------------------
 
 type Logger struct {
@@ -81,10 +97,10 @@ func (l *Logger) With(key string, value any) LoggerEntry {
 	}
 }
 
-func (l *Logger) Debug(msg string, args ...any) { l.log("debug", msg, args...) }
-func (l *Logger) Info(msg string, args ...any)  { l.log("info", msg, args...) }
-func (l *Logger) Warn(msg string, args ...any)  { l.log("warn", msg, args...) }
-func (l *Logger) Error(msg string, args ...any) { l.log("error", msg, args...) }
+func (l *Logger) Debug(msg string, args ...any) { l.log(LevelDebug, msg, args...) }
+func (l *Logger) Info(msg string, args ...any)  { l.log(LevelInfo, msg, args...) }
+func (l *Logger) Warn(msg string, args ...any)  { l.log(LevelWarn, msg, args...) }
+func (l *Logger) Error(msg string, args ...any) { l.log(LevelError, msg, args...) }
 
 func (l *Logger) log(level, msg string, args ...any) {
 	if !shouldLog(l.level, level) {
@@ -92,7 +108,7 @@ func (l *Logger) log(level, msg string, args ...any) {
 	}
 	prefix := fmt.Sprintf("[%s][%s]", strings.ToUpper(level), l.service)
 	if l.contextID != "" {
-		prefix += fmt.Sprintf("[ctx:%s]", l.contextID)
+		prefix += fmt.Sprintf("[cid:%s]", l.contextID)
 	}
 	log.Printf("%s %s", prefix, fmt.Sprintf(msg, args...))
 }
@@ -114,10 +130,21 @@ func (e *entry) With(key string, value any) LoggerEntry {
 	return e
 }
 
-func (e *entry) Debug(msg string, args ...any) { e.log("debug", msg, args...) }
-func (e *entry) Info(msg string, args ...any)  { e.log("info", msg, args...) }
-func (e *entry) Warn(msg string, args ...any)  { e.log("warn", msg, args...) }
-func (e *entry) Error(msg string, args ...any) { e.log("error", msg, args...) }
+func (e *entry) Clone() LoggerEntry {
+	copied := make(map[string]any, len(e.fields))
+	for k, v := range e.fields {
+		copied[k] = v
+	}
+	return &entry{
+		parent: e.parent.Clone().(*Logger),
+		fields: copied,
+	}
+}
+
+func (e *entry) Debug(msg string, args ...any) { e.log(LevelDebug, msg, args...) }
+func (e *entry) Info(msg string, args ...any)  { e.log(LevelInfo, msg, args...) }
+func (e *entry) Warn(msg string, args ...any)  { e.log(LevelWarn, msg, args...) }
+func (e *entry) Error(msg string, args ...any) { e.log(LevelError, msg, args...) }
 
 func (e *entry) log(level, msg string, args ...any) {
 	if !shouldLog(e.parent.level, level) {
@@ -126,7 +153,7 @@ func (e *entry) log(level, msg string, args ...any) {
 
 	prefix := fmt.Sprintf("[%s][%s]", strings.ToUpper(level), e.parent.service)
 	if e.parent.contextID != "" {
-		prefix += fmt.Sprintf("[ctx:%s]", e.parent.contextID)
+		prefix += fmt.Sprintf("[cid:%s]", e.parent.contextID)
 	}
 
 	// format fields
@@ -150,21 +177,19 @@ func (e *entry) log(level, msg string, args ...any) {
 
 func normalizeLevel(level string) string {
 	switch strings.ToLower(level) {
-	case "debug", "info", "warn", "error":
+	case LevelDebug, LevelInfo, LevelWarn, LevelError:
 		return strings.ToLower(level)
 	default:
-		return "info"
+		return LevelInfo
 	}
 }
 
 func shouldLog(current, incoming string) bool {
-	order := map[string]int{
-		"debug": 1,
-		"info":  2,
-		"warn":  3,
-		"error": 4,
-	}
-	c := order[normalizeLevel(current)]
-	i := order[normalizeLevel(incoming)]
+	c := levelOrder[normalizeLevel(current)]
+	i := levelOrder[normalizeLevel(incoming)]
 	return i >= c
+}
+
+func (l *Logger) Level() string {
+	return l.level
 }
