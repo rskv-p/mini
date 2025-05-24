@@ -1,4 +1,3 @@
-// file: mini/context/context.go
 package context
 
 import (
@@ -31,6 +30,7 @@ type IContext interface {
 	Get(id string) *Conversation
 	Delete(id string)
 	Done(id string)
+	DoneChan(id string) <-chan struct{}
 	Wait(id string)
 	WaitTimeout(id string, timeout time.Duration) bool
 	WaitContext(id string, ctx context.Context) bool
@@ -41,6 +41,7 @@ type IContext interface {
 	Reset()
 	SetAutoDelete(bool)
 	SetHooks(onAdd func(*Conversation), onDelete func(*Conversation))
+	ShutdownAll()
 }
 
 // Context implements IContext using sync.Map.
@@ -67,10 +68,8 @@ func (m *Context) Add(conv *Conversation) string {
 	if conv == nil {
 		return ""
 	}
-	if conv.ID == "" || !isUUID(conv.ID) {
-		conv.ID = uuid.NewString()
-	}
-	conv.done = make(chan struct{})
+	ensureID(conv)
+	conv.done = newDone()
 	conv.CreatedAt = time.Now()
 	m.pool.Store(conv.ID, conv)
 	if m.onAdd != nil {
@@ -86,7 +85,7 @@ func (m *Context) With(id string, conv *Conversation) {
 	}
 	conv.ID = id
 	if conv.done == nil {
-		conv.done = make(chan struct{})
+		conv.done = newDone()
 	}
 	conv.CreatedAt = time.Now()
 	m.pool.Store(id, conv)
@@ -97,10 +96,12 @@ func (m *Context) With(id string, conv *Conversation) {
 
 // Get retrieves a Conversation by ID.
 func (m *Context) Get(id string) *Conversation {
-	if val, ok := m.pool.Load(id); ok {
-		return val.(*Conversation)
+	val, ok := m.pool.Load(id)
+	if !ok {
+		return nil
 	}
-	return nil
+	conv, _ := val.(*Conversation)
+	return conv
 }
 
 // Has returns true if ID exists.
@@ -119,7 +120,7 @@ func (m *Context) Delete(id string) {
 
 // Done signals completion for ID.
 func (m *Context) Done(id string) {
-	if conv := m.Get(id); conv != nil {
+	if conv := m.Get(id); conv != nil && conv.done != nil {
 		select {
 		case <-conv.done:
 			// already closed
@@ -133,18 +134,26 @@ func (m *Context) Done(id string) {
 	}
 }
 
+// DoneChan returns <-chan struct{} for non-blocking use.
+func (m *Context) DoneChan(id string) <-chan struct{} {
+	if conv := m.Get(id); conv != nil && conv.done != nil {
+		return conv.done
+	}
+	return nil
+}
+
 // Wait blocks until Done is called.
 func (m *Context) Wait(id string) {
-	if conv := m.Get(id); conv != nil && conv.done != nil {
-		<-conv.done
+	if ch := m.DoneChan(id); ch != nil {
+		<-ch
 	}
 }
 
 // WaitTimeout blocks until Done or timeout.
 func (m *Context) WaitTimeout(id string, timeout time.Duration) bool {
-	if conv := m.Get(id); conv != nil && conv.done != nil {
+	if ch := m.DoneChan(id); ch != nil {
 		select {
-		case <-conv.done:
+		case <-ch:
 			return true
 		case <-time.After(timeout):
 			return false
@@ -155,9 +164,9 @@ func (m *Context) WaitTimeout(id string, timeout time.Duration) bool {
 
 // WaitContext blocks until Done or ctx is canceled.
 func (m *Context) WaitContext(id string, ctx context.Context) bool {
-	if conv := m.Get(id); conv != nil && conv.done != nil {
+	if ch := m.DoneChan(id); ch != nil {
 		select {
-		case <-conv.done:
+		case <-ch:
 			return true
 		case <-ctx.Done():
 			return false
@@ -205,8 +214,28 @@ func (m *Context) SetAutoDelete(enable bool) {
 	m.autoDelete = enable
 }
 
+// ShutdownAll calls Done() for all conversations.
+func (m *Context) ShutdownAll() {
+	m.Range(func(id string, _ *Conversation) bool {
+		m.Done(id)
+		return true
+	})
+}
+
 // isUUID checks if str is a valid UUID.
 func isUUID(str string) bool {
 	_, err := uuid.Parse(str)
 	return err == nil
+}
+
+// newDone returns a buffered channel to prevent race panic.
+func newDone() chan struct{} {
+	return make(chan struct{}, 1)
+}
+
+// ensureID assigns new UUID if missing or malformed.
+func ensureID(c *Conversation) {
+	if c.ID == "" || !isUUID(c.ID) {
+		c.ID = uuid.NewString()
+	}
 }
