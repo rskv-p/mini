@@ -1,14 +1,15 @@
-// file: mini/service.go
 package service
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/google/uuid"
 
 	"github.com/rskv-p/mini/codec"
 	"github.com/rskv-p/mini/config"
@@ -17,9 +18,11 @@ import (
 	"github.com/rskv-p/mini/router"
 	"github.com/rskv-p/mini/selector"
 	"github.com/rskv-p/mini/transport"
-
-	"github.com/google/uuid"
 )
+
+// ----------------------------------------------------
+// Interfaces
+// ----------------------------------------------------
 
 var _ IClient = (*Service)(nil)
 var _ IServer = (*Service)(nil)
@@ -30,7 +33,6 @@ type IService interface {
 	IServer
 }
 
-// IClient exposes transport-related APIs.
 type IClient interface {
 	ID() string
 	Name() string
@@ -48,7 +50,6 @@ type IClient interface {
 	SubscribePrefix(prefix string, handler transport.MsgHandler) error
 }
 
-// IServer exposes server lifecycle and routing APIs.
 type IServer interface {
 	Init(...Option) error
 	Run() error
@@ -64,10 +65,13 @@ type IServer interface {
 	Use(mw Middleware)
 }
 
-// Service is the core implementation.
+// ----------------------------------------------------
+// Implementation
+// ----------------------------------------------------
+
 type Service struct {
 	opts    Options
-	config  *config.Config
+	config  config.IConfig
 	name    string
 	version string
 	id      string
@@ -83,11 +87,13 @@ type Service struct {
 	middlewares []Middleware
 }
 
-// NewService creates a new service instance.
 func NewService(name, version string, extra ...Option) *Service {
-	cfg := config.MustLoadFromEnv()
-	ctx, cancel := context.WithCancel(context.Background())
+	cfg, err := config.New(config.FromEnv("SRV_"))
+	if err != nil {
+		panic(fmt.Sprintf("load config: %v", err))
+	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	id := strings.ReplaceAll(uuid.NewString(), "-", "")
 	subject := strings.ReplaceAll(name, "-", ".") + "." + version + "." + id
 
@@ -104,7 +110,7 @@ func NewService(name, version string, extra ...Option) *Service {
 	}
 
 	defaults := []Option{
-		Logger(logger.NewLogger(name, cfg.LogLevel)),
+		Logger(logger.NewLogger(name, cfg.MustString("log_level"))),
 		Transport(transport.New(transport.Subject(subject))),
 		Registry(registry.NewRegistry()),
 		Selector(selector.NewSelector(registry.NewRegistry(), selector.SetStrategy(selector.RoundRobin))),
@@ -121,29 +127,28 @@ func NewService(name, version string, extra ...Option) *Service {
 	return s
 }
 
-// ID returns the service instance ID.
 func (s *Service) ID() string               { return s.id }
 func (s *Service) Name() string             { return s.name }
 func (s *Service) Version() string          { return s.version }
 func (s *Service) Options() Options         { return s.opts }
 func (s *Service) Context() context.Context { return s.ctx }
 
-// Config returns flattened config map.
 func (s *Service) Config() map[string]string {
-	return map[string]string{
-		"service_name":       s.config.ServiceName,
-		"bus_addr":           s.config.BusAddr,
-		"log_level":          s.config.LogLevel,
-		"port":               strconv.Itoa(s.config.Port),
-		"dev_mode":           strconv.FormatBool(s.config.DevMode),
-		"hc_memory_critical": strconv.FormatFloat(s.config.HCMemoryCriticalThreshold, 'f', -1, 64),
-		"hc_memory_warning":  strconv.FormatFloat(s.config.HCMemoryWarningThreshold, 'f', -1, 64),
-		"hc_load_critical":   strconv.FormatFloat(s.config.HCLoadCriticalThreshold, 'f', -1, 64),
-		"hc_load_warning":    strconv.FormatFloat(s.config.HCLoadWarningThreshold, 'f', -1, 64),
+	keys := []string{
+		"service_name", "bus_addr", "log_level", "port", "dev_mode",
+		"hc_memory_critical", "hc_memory_warning", "hc_load_critical", "hc_load_warning",
 	}
+	out := map[string]string{}
+	for _, key := range keys {
+		out[key] = s.config.MustString(key)
+	}
+	return out
 }
 
-// Run starts the service and blocks until signal.
+// ----------------------------------------------------
+// Lifecycle
+// ----------------------------------------------------
+
 func (s *Service) Run() error {
 	s.logger.Info("▶ starting %s %s", s.name, s.version)
 
@@ -162,7 +167,6 @@ func (s *Service) Run() error {
 	return s.Stop()
 }
 
-// Stop shuts down transport and deregisters service.
 func (s *Service) Stop() error {
 	s.cancel()
 
@@ -177,7 +181,6 @@ func (s *Service) Stop() error {
 	return s.opts.Transport.Close()
 }
 
-// Init initializes and registers the service.
 func (s *Service) Init(opts ...Option) error {
 	for _, o := range opts {
 		o(&s.opts)
@@ -221,7 +224,6 @@ func (s *Service) Init(opts ...Option) error {
 	return nil
 }
 
-// start subscribes to transport and registers in registry.
 func (s *Service) start() error {
 	if err := s.register(); err != nil {
 		return err
@@ -229,7 +231,6 @@ func (s *Service) start() error {
 	return s.opts.Transport.Subscribe()
 }
 
-// register adds the service to the registry.
 func (s *Service) register() error {
 	svc := &registry.Service{Name: s.name, Nodes: []*registry.Node{{ID: s.id}}}
 	if s.opts.Router != nil {
@@ -240,7 +241,6 @@ func (s *Service) register() error {
 	return s.opts.Registry.Register(svc)
 }
 
-// deregister removes the service from the registry.
 func (s *Service) deregister() error {
 	svc := &registry.Service{Name: s.name, Nodes: []*registry.Node{{ID: s.id}}}
 	if err := s.opts.Registry.Deregister(svc); err != nil {
@@ -252,7 +252,6 @@ func (s *Service) deregister() error {
 	return nil
 }
 
-// announce sends "file.register" with service schema info.
 func (s *Service) announce() {
 	payload := map[string]any{
 		"service": s.name,
@@ -271,12 +270,14 @@ func (s *Service) announce() {
 	s.logger.Info("announced %d actions", len(s.actions))
 }
 
-// SubscribeTopic подписывается на указанный топик.
+// ----------------------------------------------------
+// Subscriptions
+// ----------------------------------------------------
+
 func (s *Service) SubscribeTopic(topic string, handler transport.MsgHandler) error {
 	return s.opts.Transport.SubscribeTopic(topic, handler)
 }
 
-// SubscribePrefix подписывается на все топики с указанным префиксом.
 func (s *Service) SubscribePrefix(prefix string, handler transport.MsgHandler) error {
 	if s.opts.Transport == nil {
 		return transport.ErrDisconnected

@@ -1,4 +1,3 @@
-// file: mini/health.go
 package service
 
 import (
@@ -14,10 +13,6 @@ import (
 	"github.com/shirou/gopsutil/mem"
 )
 
-// ----------------------------------------------------
-// Configuration helper
-// ----------------------------------------------------
-
 // ToFloat converts various types to float64.
 func ToFloat(v any) float64 {
 	switch x := v.(type) {
@@ -32,10 +27,12 @@ func ToFloat(v any) float64 {
 	return 0
 }
 
-// ----------------------------------------------------
-// Health probe registration
-// ----------------------------------------------------
+// getFloat safely extracts float config values.
+func getFloat(cfg config.IConfig, key string) float64 {
+	return ToFloat(cfg.MustString(key))
+}
 
+// HealthProbe is a function that returns key + status.
 type HealthProbe func() (key string, status int, info any)
 
 var (
@@ -50,12 +47,8 @@ func RegisterHealthProbe(probe HealthProbe) {
 	healthProbes = append(healthProbes, probe)
 }
 
-// ----------------------------------------------------
-// Core health-check logic
-// ----------------------------------------------------
-
-// healthCheck evaluates memory, CPU, and custom probes.
-func healthCheck(cfg *config.Config) (int, map[string]any) {
+// healthCheck evaluates memory, CPU, and registered probes.
+func healthCheck(cfg config.IConfig) (int, map[string]any) {
 	if cfg == nil {
 		log.Println("[health] missing configuration")
 		return constant.StatusWarning, nil
@@ -64,18 +57,19 @@ func healthCheck(cfg *config.Config) (int, map[string]any) {
 	status := constant.StatusOK
 	feedback := make(map[string]any)
 
-	// memory usage check
-	memCrit := cfg.HCMemoryCriticalThreshold
-	memWarn := cfg.HCMemoryWarningThreshold
+	// --- Memory Check ---
+	memCrit := getFloat(cfg, "hc_memory_critical")
+	memWarn := getFloat(cfg, "hc_memory_warning")
 	if vm, err := mem.VirtualMemory(); err == nil {
 		used := vm.UsedPercent
 		free := 100 - used
-		if memCrit > 0 && free < memCrit {
+		switch {
+		case memCrit > 0 && free < memCrit:
 			msg := "Memory critical: used=" + strconv.FormatFloat(used, 'f', 1, 64) + "%"
 			log.Println("[health] " + msg)
 			feedback[constant.MemoryCriticalKey] = msg
 			status |= constant.StatusCritical
-		} else if memWarn > 0 && free < memWarn {
+		case memWarn > 0 && free < memWarn:
 			msg := "Memory warning: used=" + strconv.FormatFloat(used, 'f', 1, 64) + "%"
 			log.Println("[health] " + msg)
 			feedback[constant.MemoryWarningKey] = msg
@@ -83,26 +77,28 @@ func healthCheck(cfg *config.Config) (int, map[string]any) {
 		}
 	}
 
-	// CPU load check
-	loadCrit := cfg.HCLoadCriticalThreshold
-	loadWarn := cfg.HCLoadWarningThreshold
+	// --- CPU Load Check ---
+	loadCrit := getFloat(cfg, "hc_load_critical")
+	loadWarn := getFloat(cfg, "hc_load_warning")
 	if avg, err := load.Avg(); err == nil {
-		cores := int32(0)
+		cores := int32(1)
 		if info, err := cpu.Info(); err == nil {
+			cores = 0
 			for _, c := range info {
 				cores += c.Cores
 			}
-		}
-		if cores == 0 {
-			cores = 1
+			if cores == 0 {
+				cores = 1
+			}
 		}
 		ratio := avg.Load5 / float64(cores)
-		if loadCrit > 0 && ratio > loadCrit {
+		switch {
+		case loadCrit > 0 && ratio > loadCrit:
 			msg := "CPU load critical: load5=" + strconv.FormatFloat(ratio, 'f', 2, 64)
 			log.Println("[health] " + msg)
 			feedback[constant.LoadCriticalKey] = msg
 			status |= constant.StatusCritical
-		} else if loadWarn > 0 && ratio > loadWarn {
+		case loadWarn > 0 && ratio > loadWarn:
 			msg := "CPU load warning: load5=" + strconv.FormatFloat(ratio, 'f', 2, 64)
 			log.Println("[health] " + msg)
 			feedback[constant.LoadWarningKey] = msg
@@ -110,23 +106,25 @@ func healthCheck(cfg *config.Config) (int, map[string]any) {
 		}
 	}
 
-	// custom health probes
+	// --- Custom Health Probes ---
 	healthProbesMu.RLock()
 	for _, probe := range healthProbes {
 		key, st, info := probe()
 		if key == "" {
 			continue
 		}
-		if st == constant.StatusCritical {
+		switch st {
+		case constant.StatusCritical:
 			status |= constant.StatusCritical
-		} else if st == constant.StatusWarning && status < constant.StatusCritical {
-			status |= constant.StatusWarning
+		case constant.StatusWarning:
+			if status < constant.StatusCritical {
+				status |= constant.StatusWarning
+			}
 		}
 		feedback[key] = info
 	}
 	healthProbesMu.RUnlock()
 
-	// cap status at critical
 	if status > constant.StatusCritical {
 		status = constant.StatusCritical
 	}
