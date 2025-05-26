@@ -19,6 +19,9 @@ var (
 
 type MsgHandler func([]byte) error
 
+// TransportHandler is the unified handler type with context support.
+type TransportHandler func(ctx context.Context, subject string, data []byte) error
+
 type ITransport interface {
 	Init() error
 	Close() error
@@ -37,7 +40,7 @@ type ITransport interface {
 	RequestWithContext(ctx context.Context, subject string, req []byte, handler ResponseHandler) error
 	Publish(subject string, data []byte) error
 	Respond(replyTo string, msg codec.IMessage) error
-	SendFile(msg codec.IMessage, subject string, file []byte) error
+	SendFile(codec.IMessage, string, []byte, int) error
 	Broadcast(subjects []string, data []byte) error
 	Broadcastf(format string, keys ...string) error
 
@@ -79,7 +82,7 @@ func (t *Transport) Init() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	var addrs []string
+	addrs := make([]string, 0, len(t.opts.Addrs))
 	for _, addr := range t.opts.Addrs {
 		if addr != "" {
 			addrs = append(addrs, strings.TrimPrefix(addr, "bus://"))
@@ -100,6 +103,7 @@ func (t *Transport) Init() error {
 		return err
 	}
 	t.conn = conn
+
 	if t.opts.Logger != nil {
 		t.opts.Logger.Info("transport initialized: %v", addrs)
 	}
@@ -130,45 +134,53 @@ func (t *Transport) Options() Options        { return t.opts }
 func (t *Transport) SetHandler(h MsgHandler) { t.handler = h }
 func (t *Transport) Use(mw MiddlewareFunc)   { t.middlewares = append(t.middlewares, mw) }
 
-func (t *Transport) wrapChain(final func(string, []byte) error) func(string, []byte) error {
-	return func(subject string, data []byte) error {
+func (t *Transport) wrap(handler TransportHandler) TransportHandler {
+	for i := len(t.middlewares) - 1; i >= 0; i-- {
+		handler = t.middlewares[i](handler)
+	}
+	return func(ctx context.Context, subject string, data []byte) error {
 		t.active.Add(1)
 		defer t.active.Done()
-		wrapped := final
-		for i := len(t.middlewares) - 1; i >= 0; i-- {
-			next := wrapped
-			mw := t.middlewares[i]
-			wrapped = func(subj string, d []byte) error {
-				return mw(subj, d, next)
-			}
-		}
-		return wrapped(subject, data)
+		return handler(ctx, subject, data)
 	}
 }
 
 func (t *Transport) Subscribe() error {
+	if t.handler == nil {
+		return ErrMissingHandler
+	}
+	return t.subscribeInternal(t.opts.Subject, t.handler)
+}
+
+func (t *Transport) SubscribeTopic(topic string, handler MsgHandler) error {
+	return t.subscribeInternal(topic, handler)
+}
+
+func (t *Transport) subscribeInternal(topic string, rawHandler MsgHandler) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.conn == nil {
 		return ErrDisconnected
 	}
-	if t.handler == nil {
-		return ErrMissingHandler
-	}
+
 	if t.opts.Logger != nil {
-		t.opts.Logger.Debug("subscribe to: %s", t.opts.Subject)
+		t.opts.Logger.Debug("subscribe to: %s", topic)
 	}
 
-	sub, err := t.conn.Subscribe(t.opts.Subject, func(data []byte) error {
-		return t.wrapChain(func(_ string, d []byte) error {
-			return t.handler(d)
-		})(t.opts.Subject, data)
+	handler := t.wrap(func(ctx context.Context, subject string, data []byte) error {
+		return rawHandler(data)
+	})
+
+	sub, err := t.conn.Subscribe(topic, func(data []byte) error {
+		return handler(context.Background(), topic, data)
 	})
 	if err != nil {
 		return err
 	}
-	t.sub = sub
+	if topic == t.opts.Subject {
+		t.sub = sub
+	}
 	return nil
 }
 
@@ -226,28 +238,11 @@ func (t *Transport) reconnect() error {
 		return err
 	}
 	t.conn = conn
+
 	if t.opts.Logger != nil {
 		t.opts.Logger.Info("transport reconnected")
 	}
 	return nil
-}
-
-func (t *Transport) SubscribeTopic(topic string, handler MsgHandler) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.conn == nil {
-		return ErrDisconnected
-	}
-	if t.opts.Logger != nil {
-		t.opts.Logger.Debug("subscribe to topic: %s", topic)
-	}
-	_, err := t.conn.Subscribe(topic, func(data []byte) error {
-		return t.wrapChain(func(_ string, d []byte) error {
-			return handler(d)
-		})(topic, data)
-	})
-	return err
 }
 
 func (t *Transport) SubscribePrefix(prefix string, handler MsgHandler) error {
@@ -266,10 +261,11 @@ func (t *Transport) SubscribePrefix(prefix string, handler MsgHandler) error {
 
 	for _, topic := range topics {
 		if strings.HasPrefix(topic, prefix) {
+			h := t.wrap(func(ctx context.Context, subject string, data []byte) error {
+				return handler(data)
+			})
 			_, err := t.conn.Subscribe(topic, func(data []byte) error {
-				return t.wrapChain(func(_ string, d []byte) error {
-					return handler(d)
-				})(topic, data)
+				return h(context.Background(), topic, data)
 			})
 			if err != nil && t.opts.Logger != nil {
 				t.opts.Logger.Warn("prefix subscribe failed for %s: %v", topic, err)

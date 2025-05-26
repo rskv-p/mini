@@ -17,13 +17,10 @@ import (
 // Handler types and wrappers
 // ----------------------------------------------------
 
-// Old: Handler func(*codec.Message, string) *router.Error — удалено
-// Используем router.Handler напрямую через router.Router
-
 type HandlerWrapper = router.HandlerWrapper
 
 // ----------------------------------------------------
-// Retry and Hooks
+// Retry and lifecycle hooks
 // ----------------------------------------------------
 
 type RetryConfig struct {
@@ -32,16 +29,16 @@ type RetryConfig struct {
 }
 
 type Hooks struct {
+	OnInit     func()
 	OnStart    func()
 	OnStop     func()
 	OnError    func(error)
 	OnMessage  func(codec.IMessage)
 	OnShutdown func()
-	OnInit     func()
 }
 
 // ----------------------------------------------------
-// Service options structure
+// Options struct for IService
 // ----------------------------------------------------
 
 type Options struct {
@@ -58,15 +55,15 @@ type Options struct {
 	Debug        bool
 }
 
-// Option applies configuration to Options.
+// Option defines a configuration function.
 type Option func(*Options)
 
 // ----------------------------------------------------
-// Default Options builder
+// Default builder
 // ----------------------------------------------------
 
 func newOptions(opts ...Option) Options {
-	opt := Options{
+	o := Options{
 		Context: context.NewContext(),
 		Retry: RetryConfig{
 			Count:    3,
@@ -74,28 +71,28 @@ func newOptions(opts ...Option) Options {
 		},
 	}
 
-	for _, o := range opts {
-		o(&opt)
+	for _, opt := range opts {
+		opt(&o)
 	}
 
-	// Apply defaults if not set
-	if opt.Registry == nil {
-		opt.Registry = registry.NewRegistry()
+	// Set safe defaults
+	if o.Registry == nil {
+		o.Registry = registry.NewRegistry()
 	}
-	if opt.Router == nil {
-		opt.Router = router.NewRouter()
+	if o.Router == nil {
+		o.Router = router.NewRouter()
 	}
-	if opt.Transport == nil {
-		opt.Transport = transport.New()
+	if o.Transport == nil {
+		o.Transport = transport.New()
 	}
-	if opt.Selector == nil {
-		opt.Selector = selector.NewSelector(opt.Registry, selector.SetStrategy(selector.RoundRobin))
+	if o.Selector == nil {
+		o.Selector = selector.NewSelector(o.Registry, selector.SetStrategy(selector.RoundRobin))
 	}
-	if opt.Logger == nil {
-		opt.Logger = logger.NewLogger("service", "info")
+	if o.Logger == nil {
+		o.Logger = logger.NewLogger("service", "info")
 	}
 
-	return opt
+	return o
 }
 
 // ----------------------------------------------------
@@ -151,16 +148,14 @@ func EnableDebug() Option {
 // Utility methods
 // ----------------------------------------------------
 
-// Clone creates a deep copy of Options.
 func (o *Options) Clone() Options {
-	copy := *o
-	copy.HdlrWrappers = append([]HandlerWrapper{}, o.HdlrWrappers...)
-	copy.Retry = o.Retry
-	copy.Hooks = o.Hooks
-	return copy
+	c := *o
+	c.HdlrWrappers = append([]HandlerWrapper{}, o.HdlrWrappers...)
+	c.Retry = o.Retry
+	c.Hooks = o.Hooks
+	return c
 }
 
-// Validate checks for missing critical dependencies.
 func (o *Options) Validate() error {
 	if o.Transport == nil {
 		return ErrMissing("Transport")
@@ -180,7 +175,10 @@ func (o *Options) Validate() error {
 	return nil
 }
 
-// ErrMissing formats a config missing error.
+// ----------------------------------------------------
+// Error type for missing dependencies
+// ----------------------------------------------------
+
 func ErrMissing(name string) error {
 	return &MissingDependencyError{name}
 }

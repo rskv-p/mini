@@ -55,11 +55,14 @@ func (w *MemoryFileWriter) WriteChunk(chunk FileChunk) error {
 func (w *MemoryFileWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.closed {
+		return nil
+	}
 	w.closed = true
 	return nil
 }
 
-// Bytes returns the full buffer (read-only copy).
+// Bytes returns the full buffer (read-only).
 func (w *MemoryFileWriter) Bytes() []byte {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -74,6 +77,7 @@ func (w *MemoryFileWriter) Bytes() []byte {
 
 type DiskFileWriter struct {
 	file   *os.File
+	path   string
 	closed bool
 	mu     sync.Mutex
 }
@@ -87,7 +91,7 @@ func NewDiskFileWriter(path string) (*DiskFileWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DiskFileWriter{file: f}, nil
+	return &DiskFileWriter{file: f, path: path}, nil
 }
 
 func (w *DiskFileWriter) WriteChunk(chunk FileChunk) error {
@@ -108,6 +112,11 @@ func (w *DiskFileWriter) Close() error {
 	}
 	w.closed = true
 	return w.file.Close()
+}
+
+// Path returns the file path used for writing (optional).
+func (w *DiskFileWriter) Path() string {
+	return w.path
 }
 
 //
@@ -149,7 +158,6 @@ func ReceiveFileRouter(newWriter func(meta FileChunk) (IStreamFileWriter, error)
 				return fmt.Errorf("close writer %s: %w", chunk.FileID, err)
 			}
 		}
-
 		return nil
 	})
 }

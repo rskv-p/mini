@@ -1,3 +1,4 @@
+// file: mini/logger/logger_test.go
 package logger_test
 
 import (

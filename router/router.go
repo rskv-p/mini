@@ -33,6 +33,7 @@ type Node struct {
 	Handler            Handler             `json:"-"`
 	ValidationRules    map[string][]string `json:"validation_rules,omitempty"`
 	ValidationMessages map[string]string   `json:"validation_messages,omitempty"`
+	Wrappers           []HandlerWrapper    `json:"-"`
 }
 
 // IAction defines a declarative router action.
@@ -63,7 +64,7 @@ type Router struct {
 }
 
 func NewRouter(opts ...Option) *Router {
-	options := Options{}
+	options := WithDefaults()
 	for _, o := range opts {
 		o(&options)
 	}
@@ -92,8 +93,15 @@ func (r *Router) Add(n *Node) {
 	if n == nil || n.ID == "" || n.Handler == nil {
 		return
 	}
-	n.Handler = wrapWithValidation(n, Wrap(n.Handler, r.opts.Wrappers))
+
+	wrappers := append(r.opts.Wrappers, n.Wrappers...)
+	n.Handler = wrapWithValidation(n, Wrap(n.Handler, wrappers))
+
 	r.routes[n.ID] = n
+
+	if r.opts.Logger != nil {
+		r.opts.Logger.Debug("route registered: %s", n.ID)
+	}
 }
 
 func (r *Router) AddMany(nodes []*Node) {
@@ -172,6 +180,10 @@ func (r *Router) GetOptions() Options {
 	return r.opts
 }
 
+// ----------------------------------------------------
+// Wrappers and validation
+// ----------------------------------------------------
+
 func Wrap(h Handler, wrappers []HandlerWrapper) Handler {
 	for i := len(wrappers) - 1; i >= 0; i-- {
 		h = wrappers[i](h)
@@ -188,18 +200,10 @@ func wrapWithValidation(n *Node, next Handler) Handler {
 		for field, rules := range n.ValidationRules {
 			val, exists := body[field]
 			for _, rule := range rules {
-				switch {
-				case rule == "required":
-					if !exists || val == nil || val == "" {
-						return &Error{StatusCode: 400, Message: validationMsg(n, field, rule, fmt.Sprintf("Field '%s' is required", field))}
-					}
-				case strings.HasPrefix(rule, "min:"):
-					if err := checkMin(val, strings.TrimPrefix(rule, "min:")); err != nil {
-						return &Error{StatusCode: 400, Message: validationMsg(n, field, rule, err.Error())}
-					}
-				case strings.HasPrefix(rule, "max:"):
-					if err := checkMax(val, strings.TrimPrefix(rule, "max:")); err != nil {
-						return &Error{StatusCode: 400, Message: validationMsg(n, field, rule, err.Error())}
+				if err := validateRule(rule, val, exists, field); err != nil {
+					return &Error{
+						StatusCode: 400,
+						Message:    validationMsg(n, field, rule, err.Error()),
 					}
 				}
 			}
@@ -208,12 +212,33 @@ func wrapWithValidation(n *Node, next Handler) Handler {
 	}
 }
 
+func validateRule(rule string, val any, exists bool, field string) error {
+	switch {
+	case rule == "required":
+		if !exists || val == nil || val == "" {
+			return fmt.Errorf("field '%s' is required", field)
+		}
+	case strings.HasPrefix(rule, "min:"):
+		return checkMin(val, strings.TrimPrefix(rule, "min:"))
+	case strings.HasPrefix(rule, "max:"):
+		return checkMax(val, strings.TrimPrefix(rule, "max:"))
+	}
+	return nil
+}
+
 func validationMsg(n *Node, field, rule, fallback string) string {
 	if n == nil || n.ValidationMessages == nil {
 		return fallback
 	}
+	// exact match: "name.min:3"
 	if msg, ok := n.ValidationMessages[field+"."+rule]; ok {
 		return msg
+	}
+	// rule prefix match: "name.min"
+	if i := strings.Index(rule, ":"); i > 0 {
+		if msg, ok := n.ValidationMessages[field+"."+rule[:i]]; ok {
+			return msg
+		}
 	}
 	if msg, ok := n.ValidationMessages[field]; ok {
 		return msg

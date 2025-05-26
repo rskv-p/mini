@@ -1,4 +1,4 @@
-// registry.go
+// file: mini/registry/registry.go
 package registry
 
 import (

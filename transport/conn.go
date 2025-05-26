@@ -7,15 +7,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rskv-p/mini/codec"
-
 	"github.com/google/uuid"
 	"github.com/nsqio/go-nsq"
+	"github.com/rskv-p/mini/codec"
 )
 
 // Ensure Conn implements IConn interface.
 var _ IConn = (*Conn)(nil)
 
+// IConn defines the internal transport connection interface.
 type IConn interface {
 	Publish(subject string, data []byte) error
 	Request(subject string, data []byte, timeout time.Duration) (codec.IMessage, error)
@@ -26,6 +26,7 @@ type IConn interface {
 	Ping() error
 }
 
+// Conn wraps nsq.Producer and dynamic consumer map.
 type Conn struct {
 	producer   *nsq.Producer
 	opts       *ConnOptions
@@ -35,12 +36,14 @@ type Conn struct {
 	replyChans map[string]chan codec.IMessage
 }
 
+// Subscription wraps a topic/channel-bound consumer.
 type Subscription struct {
 	topic    string
 	channel  string
 	consumer *nsq.Consumer
 }
 
+// ConnOptions defines how to connect to NSQ.
 type ConnOptions struct {
 	Servers []string
 	Timeout time.Duration
@@ -48,6 +51,7 @@ type ConnOptions struct {
 	Metrics IMetrics
 }
 
+// DefaultConnOptions returns base connection settings.
 func DefaultConnOptions() *ConnOptions {
 	return &ConnOptions{
 		Servers: []string{"127.0.0.1:4150"},
@@ -55,7 +59,7 @@ func DefaultConnOptions() *ConnOptions {
 	}
 }
 
-// Connect initializes the NSQ producer and returns a Conn.
+// Connect creates a new Conn with producer initialized.
 func (o *ConnOptions) Connect() (*Conn, error) {
 	cfg := nsq.NewConfig()
 	prod, err := nsq.NewProducer(o.Servers[0], cfg)
@@ -70,15 +74,13 @@ func (o *ConnOptions) Connect() (*Conn, error) {
 	}, nil
 }
 
-// Publish sends a message to the specified subject.
 func (c *Conn) Publish(subject string, data []byte) error {
 	if c.opts.Debug {
-		fmt.Printf("[nsq] → publish %s (%d bytes)\n", subject, len(data))
+		fmt.Printf("[nsq] → publish: %s (%d bytes)\n", subject, len(data))
 	}
 	return c.producer.Publish(subject, data)
 }
 
-// Request sends a message and waits for a reply using replyTo + contextID.
 func (c *Conn) Request(subject string, data []byte, timeout time.Duration) (codec.IMessage, error) {
 	msg := codec.NewMessage("")
 	if err := codec.Unmarshal(data, msg); err != nil {
@@ -94,13 +96,14 @@ func (c *Conn) Request(subject string, data []byte, timeout time.Duration) (code
 
 	replyCh := make(chan codec.IMessage, 1)
 
+	// Subscribe to reply
 	_, err := c.SubscribeOnce(msg.GetReplyTo(), func(data []byte) error {
 		resp := codec.NewMessage("")
 		if err := codec.Unmarshal(data, resp); err != nil {
 			return err
 		}
 		if c.opts.Debug {
-			fmt.Printf("[nsq] ← response %s (contextID=%s)\n", msg.GetReplyTo(), resp.GetContextID())
+			fmt.Printf("[nsq] ← response from %s (ctx=%s)\n", msg.GetReplyTo(), resp.GetContextID())
 		}
 		c.replyMu.Lock()
 		if ch, ok := c.replyChans[resp.GetContextID()]; ok {
@@ -116,17 +119,19 @@ func (c *Conn) Request(subject string, data []byte, timeout time.Duration) (code
 		return nil, fmt.Errorf("subscribe to reply: %w", err)
 	}
 
+	// Store channel
 	c.replyMu.Lock()
 	c.replyChans[msg.GetContextID()] = replyCh
 	c.replyMu.Unlock()
 	c.cleanupReplyChan(msg.GetContextID(), replyCh, timeout+5*time.Second)
 
+	// Marshal and send
 	raw, err := codec.Marshal(msg)
 	if err != nil {
 		return nil, err
 	}
 	if c.opts.Debug {
-		fmt.Printf("[nsq] → request %s → %s (contextID=%s)\n", subject, msg.GetReplyTo(), msg.GetContextID())
+		fmt.Printf("[nsq] → request %s → %s (ctx=%s)\n", subject, msg.GetReplyTo(), msg.GetContextID())
 	}
 	if err := c.Publish(subject, raw); err != nil {
 		return nil, err
@@ -140,7 +145,6 @@ func (c *Conn) Request(subject string, data []byte, timeout time.Duration) (code
 	}
 }
 
-// cleanupReplyChan removes reply channel after TTL or response.
 func (c *Conn) cleanupReplyChan(contextID string, ch chan codec.IMessage, ttl time.Duration) {
 	timer := time.NewTimer(ttl)
 	go func() {
@@ -158,17 +162,16 @@ func (c *Conn) cleanupReplyChan(contextID string, ch chan codec.IMessage, ttl ti
 	}()
 }
 
-// Subscribe registers a persistent consumer on a subject.
 func (c *Conn) Subscribe(subject string, handler MsgHandler) (*Subscription, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.opts.Debug {
-		fmt.Printf("[nsq] subscribe to: %s\n", subject)
-	}
-
 	if _, exists := c.consumers[subject]; exists {
 		return nil, fmt.Errorf("consumer for subject %s already exists", subject)
+	}
+
+	if c.opts.Debug {
+		fmt.Printf("[nsq] subscribe to: %s\n", subject)
 	}
 
 	cfg := nsq.NewConfig()
@@ -198,30 +201,31 @@ func (c *Conn) Subscribe(subject string, handler MsgHandler) (*Subscription, err
 	return &Subscription{topic: subject, channel: channel, consumer: consumer}, nil
 }
 
-// SubscribeWithTTL registers a consumer with automatic cancellation after ttl.
+func (c *Conn) SubscribeOnce(subject string, handler MsgHandler, ttl time.Duration) (*Subscription, error) {
+	return c.SubscribeWithTTL(subject, handler, ttl)
+}
+
 func (c *Conn) SubscribeWithTTL(subject string, handler MsgHandler, ttl time.Duration) (*Subscription, error) {
 	sub, err := c.Subscribe(subject, handler)
 	if err != nil {
 		return nil, err
 	}
+	c.scheduleTTLUnsubscribe(subject, sub, ttl)
+	return sub, nil
+}
+
+func (c *Conn) scheduleTTLUnsubscribe(subject string, sub *Subscription, ttl time.Duration) {
 	time.AfterFunc(ttl, func() {
 		if c.opts.Debug {
-			fmt.Printf("[nsq] ⏱ auto-unsubscribe (TTL): %s\n", subject)
+			fmt.Printf("[nsq] ⏱ TTL unsubscribe: %s\n", subject)
 		}
 		_ = sub.cancel()
 		c.mu.Lock()
 		delete(c.consumers, subject)
 		c.mu.Unlock()
 	})
-	return sub, nil
 }
 
-// SubscribeOnce registers a one-time subscription with TTL.
-func (c *Conn) SubscribeOnce(subject string, handler MsgHandler, ttl time.Duration) (*Subscription, error) {
-	return c.SubscribeWithTTL(subject, handler, ttl)
-}
-
-// cancel stops the subscription.
 func (s *Subscription) cancel() error {
 	if s.consumer != nil {
 		s.consumer.Stop()
@@ -230,12 +234,10 @@ func (s *Subscription) cancel() error {
 	return nil
 }
 
-// IsConnected returns true if producer is active.
 func (c *Conn) IsConnected() bool {
 	return c.producer != nil
 }
 
-// Ping sends a no-op to check connection.
 func (c *Conn) Ping() error {
 	if c.producer == nil {
 		return errors.New("producer is nil")
@@ -243,7 +245,6 @@ func (c *Conn) Ping() error {
 	return c.producer.Ping()
 }
 
-// Close shuts down all consumers and the producer.
 func (c *Conn) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

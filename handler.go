@@ -12,6 +12,10 @@ import (
 	"github.com/rskv-p/mini/router"
 )
 
+// ----------------------------------------------------
+// Entrypoint
+// ----------------------------------------------------
+
 // ServerHandler processes incoming transport messages.
 func (s *Service) ServerHandler(msg codec.IMessage) {
 	defer recover.RecoverWithContext(s.name, "ServerHandler", msg)
@@ -30,26 +34,13 @@ func (s *Service) ServerHandler(msg codec.IMessage) {
 	}
 }
 
-// handleHealthCheck replies to a health-check request.
-func (s *Service) handleHealthCheck(msg codec.IMessage, replyTo string) {
-	go func() {
-		defer recover.RecoverWithContext(s.name, "HealthCheck", msg)
-
-		code, result := healthCheck(s.config)
-		resp := codec.NewJsonResponse(msg.GetContextID(), code)
-		resp.SetBody(result)
-
-		if data, err := codec.Marshal(resp); err == nil {
-			_ = s.opts.Transport.Publish(replyTo, data)
-		} else {
-			s.logger.WithContext(msg.GetContextID()).Error("health marshal error: %v", err)
-		}
-	}()
-}
+// ----------------------------------------------------
+// Handlers
+// ----------------------------------------------------
 
 // handleRequest routes and executes a service request.
 func (s *Service) handleRequest(msg codec.IMessage, replyTo string) {
-	defer recover.RecoverWithContext(s.name, "ServerRequest", msg)
+	defer recover.RecoverWithContext(s.name, "handleRequest", msg)
 
 	if replyTo != "" {
 		msg.SetReplyTo(replyTo)
@@ -72,7 +63,7 @@ func (s *Service) handleRequest(msg codec.IMessage, replyTo string) {
 	}
 
 	go func() {
-		defer recover.RecoverWithContext(s.name, "RequestHandler", msg)
+		defer recover.RecoverWithContext(s.name, "handleRequest.Inner", msg)
 
 		ctx := s.messageContext(msg)
 		handler = router.Wrap(handler, s.opts.HdlrWrappers)
@@ -88,30 +79,9 @@ func (s *Service) handleRequest(msg codec.IMessage, replyTo string) {
 	}()
 }
 
-// handlePublish routes a publish message without reply.
-func (s *Service) handlePublish(msg codec.IMessage) {
-	defer recover.RecoverWithContext(s.name, "PublishHandler", msg)
-
-	handler, err := s.opts.Router.Dispatch(msg)
-	if err != nil {
-		s.logger.WithContext(msg.GetContextID()).Warn("dispatch error: %v", err)
-		s.IncMetric("errors_total")
-		return
-	}
-
-	go func() {
-		defer recover.RecoverWithContext(s.name, "Publish.Inner", msg)
-
-		ctx := s.messageContext(msg)
-		handler = router.Wrap(handler, s.opts.HdlrWrappers)
-		_ = handler(ctx, msg, "")
-		s.IncMetric("publish_handled")
-	}()
-}
-
 // handleResponse forwards the response to the original requester.
 func (s *Service) handleResponse(msg codec.IMessage, raw []byte) {
-	defer recover.RecoverWithContext(s.name, "ResponseHandler", msg)
+	defer recover.RecoverWithContext(s.name, "handleResponse", msg)
 
 	conv := s.opts.Context.Get(msg.GetContextID())
 	if conv == nil {
@@ -120,6 +90,7 @@ func (s *Service) handleResponse(msg codec.IMessage, raw []byte) {
 	}
 
 	replyTo := conv.Request
+
 	if raw == nil {
 		var err error
 		raw, err = codec.Marshal(msg)
@@ -140,7 +111,49 @@ func (s *Service) handleResponse(msg codec.IMessage, raw []byte) {
 	s.IncMetric("responses_sent")
 }
 
-// messageContext builds a context.Context from msg.ContextID
+// handlePublish routes a publish message without reply.
+func (s *Service) handlePublish(msg codec.IMessage) {
+	defer recover.RecoverWithContext(s.name, "handlePublish", msg)
+
+	handler, err := s.opts.Router.Dispatch(msg)
+	if err != nil {
+		s.logger.WithContext(msg.GetContextID()).Warn("dispatch error: %v", err)
+		s.IncMetric("errors_total")
+		return
+	}
+
+	go func() {
+		defer recover.RecoverWithContext(s.name, "handlePublish.Inner", msg)
+
+		ctx := s.messageContext(msg)
+		handler = router.Wrap(handler, s.opts.HdlrWrappers)
+		_ = handler(ctx, msg, "")
+		s.IncMetric("publish_handled")
+	}()
+}
+
+// handleHealthCheck replies to a health-check request.
+func (s *Service) handleHealthCheck(msg codec.IMessage, replyTo string) {
+	go func() {
+		defer recover.RecoverWithContext(s.name, "handleHealthCheck", msg)
+
+		code, result := healthCheck(s.config)
+		resp := codec.NewJsonResponse(msg.GetContextID(), code)
+		resp.SetBody(result)
+
+		if data, err := codec.Marshal(resp); err == nil {
+			_ = s.opts.Transport.Publish(replyTo, data)
+		} else {
+			s.logger.WithContext(msg.GetContextID()).Error("health marshal error: %v", err)
+		}
+	}()
+}
+
+// ----------------------------------------------------
+// Context utils
+// ----------------------------------------------------
+
+// messageContext builds context.Context from message metadata.
 func (s *Service) messageContext(msg codec.IMessage) dcont.Context {
 	return dcont.WithValue(dcont.Background(), ContextIDKey, msg.GetContextID())
 }

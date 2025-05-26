@@ -1,3 +1,4 @@
+// file: mini/constant/constant_test.go
 package constant_test
 
 import (

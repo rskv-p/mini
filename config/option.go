@@ -1,3 +1,4 @@
+// file: mini/config/option.go
 package config
 
 import (

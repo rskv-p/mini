@@ -1,3 +1,4 @@
+// file: mini/config/nsq.go
 package config
 
 import (

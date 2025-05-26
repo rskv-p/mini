@@ -1,178 +1,195 @@
-
 # 🧩 `mini` — Core Utilities for Modular Microservices
 
-The `mini/` package provides a suite of reusable building blocks for message-based, modular microservices. It includes NSQ-powered transport, dynamic routing, in-memory service registry, error recovery, and structured logging.
+The `mini/` package is a lightweight yet powerful foundation for building modular, event-driven microservices in Go. It provides standardized messaging, in-process transport over NSQ, dynamic routing, structured logging, service discovery, and resilient panic-safe execution.
 
 ---
 
-## 📦 Directory Structure
+## 📦 Directory Overview
 
-```text
+```txt
 mini/
-├── codec/       # Standardized message format
-├── config/      # Configuration loading and defaults
-├── constant/    # Shared constants and error definitions
-├── context/     # Request lifecycle manager (conversation context)
-├── logger/      # Structured leveled logger
-├── recover/     # Safe function execution and panic recovery
+├── codec/       # Typed messages (Message, IMessage)
+├── config/      # JSON+ENV config loader with fallbacks
+├── constant/    # Shared constants and error types
+├── context/     # Request lifecycle and response tracking
+├── logger/      # Structured and contextual logger
+├── recover/     # Safe execution utilities
 ├── registry/    # In-memory service registry
-├── router/      # Declarative message routing with validation
+├── router/      # Declarative message routing
 ├── selector/    # Service node selection strategies
-└── transport/   # NSQ-based transport: publish, request, file streams
-````
+└── transport/   # NSQ-based message transport with file support
+```
 
 ---
 
-## 📡 `transport/`
+## 📡 `transport/` — Message Transport Layer
 
-Message transport layer over NSQ.
+Built on top of NSQ and abstracted via `ITransport`. Includes:
 
-* `Transport` (implements `ITransport`) supports:
+* `Publish`, `Request`, `Respond`, `Broadcast`
+* Topic and prefix subscriptions (`SubscribeTopic`, `SubscribePrefix`)
+* Retry policies per topic/subject
+* Middleware support (context-aware)
+* File chunking (`SendFile`, `ReceiveFileWithHooks`)
 
-  * `Publish`, `Request`, `Respond`, `Broadcast`
-  * `Subscribe`, `SubscribeTopic`, `SubscribePrefix`
-  * Retry policies, tracing, middleware
-* File chunking support via `SendFile` and `ReceiveFileRouter`
-* Underlying `Conn` abstracts NSQ producer/consumer + reply channels
-
----
-
-## 📨 `codec/`
-
-Unified `Message` structure for all communications:
-
-* Standard fields: `Type`, `Node`, `ContextID`, `ReplyTo`
-* `Header`: for metadata (e.g., trace IDs, message type)
-* `Body`: dynamic JSON content with typed accessors (`GetString`, `GetInt`, etc.)
-* `RawBody`: raw JSON fallback
-* Helpers: `SetResult`, `SetError`, `Validate`, `Copy`, etc.
+Backed by a flexible `Conn` layer for producer/consumer + reply channels.
 
 ---
 
-## 🔒 `constant/`
+## 📨 `codec/` — Typed Messages
 
-Shared constants and standardized error definitions:
+Standard message format used throughout the system:
 
-* Message types: `request`, `response`, `stream`, `event`
-* Common errors: `ErrNotFound`, `ErrEmptyMessage`, `ErrInvalidPath`
-* Standard keys: `result`, `error`, `input`
-* Max file chunk size, health status flags, and internal status codes
+* Core fields: `Type`, `Node`, `ContextID`, `ReplyTo`, `Headers`, `Body`
+* Type-safe accessors: `GetString`, `GetInt`, `GetBool`, etc.
+* `SetError`, `SetResult`, `Validate`, `Copy`
+* `RawBody` support for low-level access
+* Interface: `IMessage`
 
 ---
 
-## 🧠 `context/`
+## 🔒 `constant/` — Standard Constants
 
-Manages conversation lifecycle (`ContextID` → `Conversation`):
+* Message types: `request`, `response`, `stream`, `event`, `health`
+* Errors: `ErrNotFound`, `ErrEmptyMessage`, `ErrInvalidPath`
+* Special keys: `error`, `result`, `input`
+* Limits: `MaxFileChunkSize = 2MB`
+* Health status: `StatusOK`, `StatusWarning`, `StatusCritical`
 
+---
+
+## 🧠 `context/` — Request Lifecycle Manager
+
+Maps `ContextID → Conversation` with support for:
+
+* Response tracking for `Request/Respond` pairs
+* Automatic TTL cleanup and lifecycle hooks
 * Methods: `Add`, `Get`, `Done`, `WaitTimeout`, `Range`
-* Supports auto-deletion and custom hooks (`onAdd`, `onDelete`)
-* Used for managing response expectations via `ContextID`
+
+Used internally to ensure responses are correctly routed.
 
 ---
 
-## 🔧 `config/`
+## 🔧 `config/` — Config Loader
 
-Configuration loader with support for:
-
-* JSON config files with env var injection (`${VAR}`)
-* Environment variable fallbacks (`SRV_*`)
-* `Config` structure includes:
-
-  * Global options: `ServiceName`, `LogLevel`, `Port`, etc.
-  * NSQ settings: TCP/HTTP address, queue size, buffer, etc.
-* Includes `Validate()`, `Dump()`, and default loaders
+* Supports JSON files with `${ENV_VAR}` interpolation
+* Env variable fallbacks (e.g. `SRV_LOG_LEVEL`)
+* Methods: `MustString`, `MustInt`, `Has`, `Dump`
+* Automatically injects defaults for missing values
 
 ---
 
-## 🪵 `logger/`
+## 🪵 `logger/` — Structured Logger
 
-Structured logging engine with levels and context:
-
-* Interface: `ILogger`
-
-  * `Debug`, `Info`, `Warn`, `Error`
-  * `WithContext(traceID)`, `With(key, value)`
-  * Level filtering (`SetLevel("warn")`)
-* Built-in formatting with sorted metadata
+* Contextual and leveled: `Debug`, `Info`, `Warn`, `Error`
+* Add metadata: `With(key, value)`, `WithContext(traceID)`
+* Interfaces: `ILogger`, `LoggerEntry`
+* Configurable log level: `SetLevel("warn")`
 
 ---
 
-## 🔁 `registry/`
+## 🔁 `registry/` — Service Registry
 
-In-memory service registry for discovery:
+In-memory registry with optional plugin support:
 
-* `Register`, `Deregister`, `GetService`, `ListServices`
-* TTL-based cleanup of stale nodes
-* Support for watchers (reactive updates on registry changes)
-* Dumps current state for diagnostics
-
----
-
-## 🎯 `selector/`
-
-Picks a service node using strategies and filters:
-
-* Strategies: `RoundRobin`, `Random`, `First`
-* Filters: match metadata (`MatchMeta`)
-* Uses internal cache (`cacheTTL`) to reduce registry calls
+* Register/Deregister services and nodes
+* TTL-based cleanup
+* Watchers for live updates
+* Introspectable service state
 
 ---
 
-## 🚦 `router/`
+## 🎯 `selector/` — Service Node Selector
 
-Declarative routing engine for incoming messages:
-
-* Interfaces:
-
-  * `IRouter` for dynamic route registration
-  * `IAction` for declarative actions with validation
-* Features:
-
-  * `RegisterActions`, `Dispatch`, `Add`, `Deregister`
-  * Middleware support (`HandlerWrapper`)
-  * Input validation: `required`, `min`, `max` with custom error messages
-* Error hook (`OnErrorHook`) and not-found handler (`OnNotFound`)
+* Node selection strategies: `RoundRobin`, `Random`, `First`
+* Metadata-based filtering
+* Internal caching (`cacheTTL`) for faster resolution
 
 ---
 
-## 🛡️ `recover/`
+## 🚦 `router/` — Dynamic Routing
 
-Utilities for safe execution and panic recovery:
-
-* `RecoverHandler()` for safe routing
-* `Safe(label, fn)` for safe goroutines
-* `WrapRecover()` for context-aware functions
-* Custom `OnPanic` hook for global crash tracking
+* Declarative routing via `IAction` and `IRouter`
+* Register handlers dynamically
+* Middleware support: `HandlerWrapper`
+* Input validation: required fields, type checks, custom rules
+* Hooks: `OnErrorHook`, `OnNotFound`
 
 ---
 
-## 🔗 Example
+## 🛡️ `recover/` — Panic Protection
+
+* `RecoverWithContext()` for panic-resilient routing
+* `Safe("label", fn)` for safe goroutines
+* Global panic hook
+* Keeps the system alive even on handler failure
+
+---
+
+## 📈 Metrics (in `service/`)
+
+* Built-in counters: `IncMetric`, `AddMetric`, `SetMetric`
+* Snapshot: `ExportMetrics()` as `map[string]float64`
+* Scoped recording: `.WithMetricPrefix("db.")`
+
+---
+
+## 🩺 Health Monitoring
+
+* Uses `gopsutil` to monitor:
+
+  * Memory (free %, thresholds)
+  * CPU load (load5 per core)
+* Thresholds configurable via `config`
+* Register custom health probes with `RegisterHealthProbe`
+
+---
+
+## 💡 Example
 
 ```go
-import (
-    "github.com/rskv-p/mini/service/transport"
-    "github.com/rskv-p/mini/service/logger"
+log := logger.NewLogger("auth", "debug")
+
+bus := transport.New(
+    transport.Addrs("127.0.0.1:4150"),
+    transport.Subject("auth.v1"),
+    transport.WithLogger(log),
+    transport.WithDebug(),
 )
 
-func main() {
-    log := logger.NewLogger("auth", "debug")
-    t := transport.New(
-        transport.Addrs("127.0.0.1:4150"),
-        transport.Subject("auth"),
-        transport.WithLogger(log),
-        transport.WithDebug(),
-    )
-    _ = t.Init()
-    // ...
-}
+svc := service.NewService("auth", "v1",
+    service.Transport(bus),
+    service.Logger(log),
+)
+
+svc.RegisterAction("auth.login", []service.InputSchemaField{
+    {Name: "email", Type: "string", Required: true},
+    {Name: "password", Type: "string", Required: true},
+}, func(ctx context.Context, input map[string]any) (any, error) {
+    return map[string]any{"token": "jwt123"}, nil
+})
+
+_ = svc.Init()
+_ = svc.Run()
 ```
 
 ---
 
 ## ✅ Features
 
-* In-process transport with NSQ backend
-* Fully typed messages with traceable metadata
-* Retry support and circuit-breaker-style hooks
-* File streaming and context-bound responses
-* Extensible registry/selector/router abstraction layers
+* In-process, type-safe transport using NSQ
+* Schema-based request validation and introspection
+* Middleware chaining for actions and handlers
+* File transfer over pub/sub (chunked)
+* Dynamic service discovery and routing
+* Built-in metrics, health checks, and error recovery
+
+---
+
+## 🧪 Ideal Use Cases
+
+* Internal service-to-service communication
+* Background workers (async `Request`/`Respond`)
+* File processing pipelines
+* Gateway → Bus → Worker architecture
+* Auth, logging, streaming, task queues

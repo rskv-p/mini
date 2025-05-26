@@ -1,3 +1,4 @@
+// file: mini/registry/internal_test.go
 package registry
 
 import (

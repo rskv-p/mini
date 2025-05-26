@@ -2,6 +2,7 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -9,43 +10,43 @@ import (
 )
 
 // ----------------------------------------------------
-// Middleware type
+// Middleware types
 // ----------------------------------------------------
 
-// MiddlewareFunc wraps transport calls with pre/post processing.
-type MiddlewareFunc func(subject string, data []byte, next func(string, []byte) error) error
+// MiddlewareFunc wraps a TransportHandler with cross-cutting logic.
+type MiddlewareFunc func(next TransportHandler) TransportHandler
 
 // ----------------------------------------------------
 // Trace middleware
 // ----------------------------------------------------
 
-// TraceMiddleware adds trace_id and logs trace information.
+// TraceMiddleware injects trace_id and context_id into the message and logs routing.
 func TraceMiddleware() MiddlewareFunc {
-	return func(subject string, data []byte, next func(string, []byte) error) error {
-		msg := codec.NewMessage("")
-		if err := codec.Unmarshal(data, msg); err != nil {
-			return err
+	return func(next TransportHandler) TransportHandler {
+		return func(ctx context.Context, subject string, data []byte) error {
+			msg := codec.NewMessage("")
+			if err := codec.Unmarshal(data, msg); err != nil {
+				return err
+			}
+
+			// Ensure trace_id
+			traceID := msg.GetString("trace_id")
+			if traceID == "" {
+				traceID = generateTraceID()
+				msg.Set("trace_id", traceID)
+			}
+
+			// Ensure context_id
+			if msg.GetContextID() == "" {
+				msg.SetContextID(generateTraceID())
+			}
+
+			fmt.Printf("[trace] → %s (trace_id=%s, ctx_id=%s)\n",
+				subject, traceID, msg.GetContextID())
+
+			data, _ = codec.Marshal(msg)
+			return next(ctx, subject, data)
 		}
-
-		// ensure trace_id
-		traceID := msg.GetString("trace_id")
-		if traceID == "" {
-			traceID = generateTraceID()
-			msg.Set("trace_id", traceID)
-		}
-
-		// ensure contextID
-		if msg.GetContextID() == "" {
-			msg.SetContextID(generateTraceID())
-		}
-
-		data, _ = codec.Marshal(msg)
-
-		fmt.Printf("[trace] → %s (trace_id=%s, ctx=%s)\n",
-			subject, traceID, msg.GetContextID(),
-		)
-
-		return next(subject, data)
 	}
 }
 
@@ -53,18 +54,20 @@ func TraceMiddleware() MiddlewareFunc {
 // Logger middleware
 // ----------------------------------------------------
 
-// LoggerMiddleware logs subject, size, status and duration.
+// LoggerMiddleware logs subject, size, duration and status.
 func LoggerMiddleware() MiddlewareFunc {
-	return func(subject string, data []byte, next func(string, []byte) error) error {
-		start := time.Now()
-		err := next(subject, data)
-		status := "OK"
-		if err != nil {
-			status = "ERR"
+	return func(next TransportHandler) TransportHandler {
+		return func(ctx context.Context, subject string, data []byte) error {
+			start := time.Now()
+			err := next(ctx, subject, data)
+			status := "OK"
+			if err != nil {
+				status = "ERR"
+			}
+
+			fmt.Printf("[log] %s (%d bytes) %s [%s]\n",
+				subject, len(data), status, time.Since(start))
+			return err
 		}
-		fmt.Printf("[log] %s (%d bytes) %s [%s]\n",
-			subject, len(data), status, time.Since(start),
-		)
-		return err
 	}
 }

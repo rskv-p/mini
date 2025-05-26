@@ -4,6 +4,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 // File chunk metadata
 // ----------------------------------------------------
 
-// FileChunk holds metadata and payload for a file chunk.
 type FileChunk struct {
 	FileID     string
 	Index      int
@@ -30,10 +30,9 @@ type FileChunk struct {
 // Sending file in chunks
 // ----------------------------------------------------
 
-// SendFile splits a file into chunks and publishes each chunk.
-func (t *Transport) SendFile(msg codec.IMessage, subject string, file []byte) error {
+func (t *Transport) SendFile(msg codec.IMessage, subject string, file []byte, chunkSize int) error {
 	fileSize := len(file)
-	total := chunkCount(fileSize, constant.MaxFileChunkSize)
+	total := chunkCount(fileSize, chunkSize)
 	reader := bytes.NewReader(file)
 
 	fileID := msg.GetContextID()
@@ -46,7 +45,7 @@ func (t *Transport) SendFile(msg codec.IMessage, subject string, file []byte) er
 	mime := msg.GetString("mime")
 
 	for index := 0; index < total; index++ {
-		size := constant.MaxFileChunkSize
+		size := chunkSize
 		if rem := fileSize - index*size; rem < size {
 			size = rem
 		}
@@ -79,6 +78,7 @@ func (t *Transport) SendFile(msg codec.IMessage, subject string, file []byte) er
 			fmt.Printf("[file] → %s | chunk %d/%d | size: %d | isLast: %v | fileID: %s\n",
 				subject, index+1, total, len(chunk), index == total-1, fileID)
 		}
+
 		if err := t.Publish(subject, data); err != nil {
 			return fmt.Errorf("publish chunk %d: %w", index, err)
 		}
@@ -87,8 +87,14 @@ func (t *Transport) SendFile(msg codec.IMessage, subject string, file []byte) er
 }
 
 // ----------------------------------------------------
-// Receiver helpers
+// Receive file helpers (chunk aggregation)
 // ----------------------------------------------------
+
+type FileReceiverHooks struct {
+	OnChunk    func(FileChunk)
+	OnComplete func([]byte, FileChunk)
+	OnTimeout  func(fileID string)
+}
 
 func ReceiveFile(handler func([]byte, FileChunk, bool) error) MsgHandler {
 	return ReceiveFileWithHooks(FileReceiverHooks{
@@ -101,12 +107,6 @@ func ReceiveFile(handler func([]byte, FileChunk, bool) error) MsgHandler {
 	})
 }
 
-type FileReceiverHooks struct {
-	OnChunk    func(FileChunk)
-	OnComplete func([]byte, FileChunk)
-	OnTimeout  func(string)
-}
-
 func ReceiveFileWithHooks(hooks FileReceiverHooks) MsgHandler {
 	buffers := make(map[string][][]byte)
 	meta := make(map[string]FileChunk)
@@ -114,39 +114,17 @@ func ReceiveFileWithHooks(hooks FileReceiverHooks) MsgHandler {
 	ttl := 60 * time.Second
 
 	return func(data []byte) error {
-		msg := codec.NewMessage("")
-		if err := codec.Unmarshal(data, msg); err != nil {
+		ch, err := decodeFileChunk(data)
+		if err != nil {
 			return err
 		}
+		fileID := ch.FileID
 
-		fileID := msg.GetString("fileID")
-		index := int(msg.GetInt("chunkIndex"))
-		total := int(msg.GetInt("chunkTotal"))
-		isLast := msg.GetBool("isLast")
-
-		raw, ok := msg.Get("fileChunk")
-		if !ok {
-			return fmt.Errorf("missing fileChunk")
-		}
-		chunkBytes, ok := raw.([]byte)
-		if !ok {
-			return fmt.Errorf("invalid fileChunk type")
-		}
-
-		ch := FileChunk{
-			FileID:     fileID,
-			Index:      index,
-			Total:      total,
-			IsLast:     isLast,
-			Filename:   msg.GetString("filename"),
-			Mime:       msg.GetString("mime"),
-			ChunkBytes: chunkBytes,
-		}
 		meta[fileID] = ch
-		buffers[fileID] = append(buffers[fileID], chunkBytes)
+		buffers[fileID] = append(buffers[fileID], ch.ChunkBytes)
 
-		if timer, exists := timers[fileID]; exists {
-			timer.Stop()
+		if t := timers[fileID]; t != nil {
+			t.Stop()
 		}
 		timers[fileID] = time.AfterFunc(ttl, func() {
 			delete(buffers, fileID)
@@ -160,41 +138,25 @@ func ReceiveFileWithHooks(hooks FileReceiverHooks) MsgHandler {
 		if hooks.OnChunk != nil {
 			hooks.OnChunk(ch)
 		}
-		if isLast && len(buffers[fileID]) == total {
+		if ch.IsLast && len(buffers[fileID]) == ch.Total {
 			full := bytes.Join(buffers[fileID], nil)
-			defer func() {
-				delete(buffers, fileID)
-				delete(meta, fileID)
-				if tmr, exists := timers[fileID]; exists {
-					tmr.Stop()
-					delete(timers, fileID)
-				}
-			}()
 			if hooks.OnComplete != nil {
 				hooks.OnComplete(full, ch)
+			}
+			delete(buffers, fileID)
+			delete(meta, fileID)
+			if t := timers[fileID]; t != nil {
+				t.Stop()
+				delete(timers, fileID)
 			}
 		}
 		return nil
 	}
 }
 
-// chunkCount returns number of chunks needed.
-func chunkCount(size, chunkSize int) int {
-	if size <= 0 || chunkSize <= 0 {
-		return 0
-	}
-	return (size + chunkSize - 1) / chunkSize
-}
-
-// generateFileID produces a unique file identifier.
-func generateFileID() string {
-	return fmt.Sprintf("file-%d", time.Now().UnixNano())
-}
-
-// FileChunkHandler handles assembled file chunks.
+// FileChunkHandler handles full or partial file reception.
 type FileChunkHandler func(context.Context, FileChunk, bool) error
 
-// ReceiveFileHandler wraps a FileChunkHandler into MsgHandler.
 func ReceiveFileHandler(handler FileChunkHandler) MsgHandler {
 	buffers := make(map[string][][]byte)
 	meta := make(map[string]FileChunk)
@@ -202,39 +164,16 @@ func ReceiveFileHandler(handler FileChunkHandler) MsgHandler {
 	ttl := 60 * time.Second
 
 	return func(data []byte) error {
-		msg := codec.NewMessage("")
-		if err := codec.Unmarshal(data, msg); err != nil {
+		ch, err := decodeFileChunk(data)
+		if err != nil {
 			return err
 		}
-
-		fileID := msg.GetString("fileID")
-		index := int(msg.GetInt("chunkIndex"))
-		total := int(msg.GetInt("chunkTotal"))
-		isLast := msg.GetBool("isLast")
-
-		raw, ok := msg.Get("fileChunk")
-		if !ok {
-			return fmt.Errorf("missing fileChunk")
-		}
-		chunkBytes, ok := raw.([]byte)
-		if !ok {
-			return fmt.Errorf("invalid chunk type")
-		}
-
-		ch := FileChunk{
-			FileID:     fileID,
-			Index:      index,
-			Total:      total,
-			IsLast:     isLast,
-			Filename:   msg.GetString("filename"),
-			Mime:       msg.GetString("mime"),
-			ChunkBytes: chunkBytes,
-		}
+		fileID := ch.FileID
 		meta[fileID] = ch
-		buffers[fileID] = append(buffers[fileID], chunkBytes)
+		buffers[fileID] = append(buffers[fileID], ch.ChunkBytes)
 
-		if tmr, exists := timers[fileID]; exists {
-			tmr.Stop()
+		if t := timers[fileID]; t != nil {
+			t.Stop()
 		}
 		timers[fileID] = time.AfterFunc(ttl, func() {
 			delete(buffers, fileID)
@@ -244,18 +183,70 @@ func ReceiveFileHandler(handler FileChunkHandler) MsgHandler {
 		})
 
 		ctx := context.Background()
-		if isLast && len(buffers[fileID]) == total {
+
+		if ch.IsLast && len(buffers[fileID]) == ch.Total {
 			full := bytes.Join(buffers[fileID], nil)
 			ch.ChunkBytes = full
 			ch.IsLast = true
 			delete(buffers, fileID)
 			delete(meta, fileID)
-			if tmr, exists := timers[fileID]; exists {
-				tmr.Stop()
+			if t := timers[fileID]; t != nil {
+				t.Stop()
 				delete(timers, fileID)
 			}
 			return handler(ctx, ch, true)
 		}
+
 		return handler(ctx, ch, false)
 	}
+}
+
+// ----------------------------------------------------
+// Utility functions
+// ----------------------------------------------------
+
+func decodeFileChunk(data []byte) (FileChunk, error) {
+	msg := codec.NewMessage("")
+	if err := codec.Unmarshal(data, msg); err != nil {
+		return FileChunk{}, err
+	}
+
+	raw, ok := msg.Get("fileChunk")
+	if !ok {
+		return FileChunk{}, fmt.Errorf("missing fileChunk")
+	}
+
+	var chunkBytes []byte
+	switch v := raw.(type) {
+	case []byte:
+		chunkBytes = v
+	case string: // ← base64 encoded []byte
+		decoded, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return FileChunk{}, fmt.Errorf("base64 decode failed: %w", err)
+		}
+		chunkBytes = decoded
+	default:
+		return FileChunk{}, fmt.Errorf("invalid fileChunk type")
+	}
+
+	return FileChunk{
+		FileID:     msg.GetString("fileID"),
+		Index:      int(msg.GetInt("chunkIndex")),
+		Total:      int(msg.GetInt("chunkTotal")),
+		IsLast:     msg.GetBool("isLast"),
+		Filename:   msg.GetString("filename"),
+		Mime:       msg.GetString("mime"),
+		ChunkBytes: chunkBytes,
+	}, nil
+}
+func chunkCount(size, chunkSize int) int {
+	if size <= 0 || chunkSize <= 0 {
+		return 0
+	}
+	return (size + chunkSize - 1) / chunkSize
+}
+
+func generateFileID() string {
+	return fmt.Sprintf("file-%d", time.Now().UnixNano())
 }

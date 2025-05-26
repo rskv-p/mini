@@ -1,3 +1,4 @@
+// file: mini/service.go
 package service
 
 import (
@@ -27,7 +28,6 @@ import (
 var _ IClient = (*Service)(nil)
 var _ IServer = (*Service)(nil)
 
-// IService combines client and server interfaces.
 type IService interface {
 	IClient
 	IServer
@@ -37,7 +37,6 @@ type IClient interface {
 	ID() string
 	Name() string
 	Version() string
-
 	Options() Options
 	Config() map[string]string
 	Context() context.Context
@@ -77,14 +76,14 @@ type Service struct {
 	id      string
 	logger  logger.ILogger
 
-	actions map[string]actionInfo
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	mu     sync.RWMutex
 
-	metrics     map[string]int64
-	mu          sync.RWMutex
+	actions     map[string]actionInfo
 	middlewares []Middleware
+	metrics     map[string]int64
 }
 
 func NewService(name, version string, extra ...Option) *Service {
@@ -95,7 +94,7 @@ func NewService(name, version string, extra ...Option) *Service {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	id := strings.ReplaceAll(uuid.NewString(), "-", "")
-	subject := strings.ReplaceAll(name, "-", ".") + "." + version + "." + id
+	subject := fmt.Sprintf("%s.%s.%s", strings.ReplaceAll(name, "-", "."), version, id)
 
 	s := &Service{
 		name:        name,
@@ -105,8 +104,8 @@ func NewService(name, version string, extra ...Option) *Service {
 		ctx:         ctx,
 		cancel:      cancel,
 		actions:     make(map[string]actionInfo),
-		metrics:     make(map[string]int64),
 		middlewares: nil,
+		metrics:     make(map[string]int64),
 	}
 
 	defaults := []Option{
@@ -116,8 +115,7 @@ func NewService(name, version string, extra ...Option) *Service {
 		Selector(selector.NewSelector(registry.NewRegistry(), selector.SetStrategy(selector.RoundRobin))),
 	}
 
-	opts := append(defaults, extra...)
-	s.opts = newOptions(opts...)
+	s.opts = newOptions(append(defaults, extra...)...)
 
 	if s.opts.Logger != nil {
 		s.logger = s.opts.Logger
@@ -136,11 +134,12 @@ func (s *Service) Context() context.Context { return s.ctx }
 func (s *Service) Config() map[string]string {
 	keys := []string{
 		"service_name", "bus_addr", "log_level", "port", "dev_mode",
-		"hc_memory_critical", "hc_memory_warning", "hc_load_critical", "hc_load_warning",
+		"hc_memory_critical", "hc_memory_warning",
+		"hc_load_critical", "hc_load_warning",
 	}
-	out := map[string]string{}
-	for _, key := range keys {
-		out[key] = s.config.MustString(key)
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		out[k] = s.config.MustString(k)
 	}
 	return out
 }
@@ -148,38 +147,6 @@ func (s *Service) Config() map[string]string {
 // ----------------------------------------------------
 // Lifecycle
 // ----------------------------------------------------
-
-func (s *Service) Run() error {
-	s.logger.Info("▶ starting %s %s", s.name, s.version)
-
-	if err := s.start(); err != nil {
-		return err
-	}
-	if s.opts.Hooks.OnStart != nil {
-		s.opts.Hooks.OnStart()
-	}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
-
-	s.logger.Info("⏹ stopping %s %s", s.name, s.version)
-	return s.Stop()
-}
-
-func (s *Service) Stop() error {
-	s.cancel()
-
-	if s.opts.Hooks.OnStop != nil {
-		s.opts.Hooks.OnStop()
-	}
-
-	s.wg.Wait()
-	if err := s.deregister(); err != nil {
-		return err
-	}
-	return s.opts.Transport.Close()
-}
 
 func (s *Service) Init(opts ...Option) error {
 	for _, o := range opts {
@@ -224,6 +191,37 @@ func (s *Service) Init(opts ...Option) error {
 	return nil
 }
 
+func (s *Service) Run() error {
+	s.logger.Info("▶ starting %s %s", s.name, s.version)
+
+	if err := s.start(); err != nil {
+		return err
+	}
+	if s.opts.Hooks.OnStart != nil {
+		s.opts.Hooks.OnStart()
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+
+	s.logger.Info("⏹ stopping %s %s", s.name, s.version)
+	return s.Stop()
+}
+
+func (s *Service) Stop() error {
+	s.cancel()
+	if s.opts.Hooks.OnStop != nil {
+		s.opts.Hooks.OnStop()
+	}
+
+	s.wg.Wait()
+	if err := s.deregister(); err != nil {
+		return err
+	}
+	return s.opts.Transport.Close()
+}
+
 func (s *Service) start() error {
 	if err := s.register(); err != nil {
 		return err
@@ -232,7 +230,10 @@ func (s *Service) start() error {
 }
 
 func (s *Service) register() error {
-	svc := &registry.Service{Name: s.name, Nodes: []*registry.Node{{ID: s.id}}}
+	svc := &registry.Service{
+		Name:  s.name,
+		Nodes: []*registry.Node{{ID: s.id}},
+	}
 	if s.opts.Router != nil {
 		if err := s.opts.Router.Register(); err != nil {
 			return err
@@ -242,7 +243,10 @@ func (s *Service) register() error {
 }
 
 func (s *Service) deregister() error {
-	svc := &registry.Service{Name: s.name, Nodes: []*registry.Node{{ID: s.id}}}
+	svc := &registry.Service{
+		Name:  s.name,
+		Nodes: []*registry.Node{{ID: s.id}},
+	}
 	if err := s.opts.Registry.Deregister(svc); err != nil {
 		return err
 	}

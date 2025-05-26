@@ -1,3 +1,4 @@
+// file: mini/codec/json_test.go
 package codec_test
 
 import (
@@ -6,6 +7,10 @@ import (
 	"github.com/rskv-p/mini/codec"
 	"github.com/stretchr/testify/assert"
 )
+
+// ----------------------------------------------------
+// Marshal / Unmarshal tests
+// ----------------------------------------------------
 
 func TestMarshal(t *testing.T) {
 	data, err := codec.Marshal(map[string]string{"foo": "bar"})
@@ -27,13 +32,17 @@ func TestUnmarshalInvalid(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// ----------------------------------------------------
+// MustMarshal panic-safe variant
+// ----------------------------------------------------
+
 func TestMustMarshalSuccess(t *testing.T) {
 	data := codec.MustMarshal(map[string]string{"x": "y"})
 	assert.JSONEq(t, `{"x":"y"}`, string(data))
 }
 
 func TestMustMarshalPanic(t *testing.T) {
-	// тип, который не может быть сериализован (chan)
+	// Struct with unsupported field type (chan)
 	type Bad struct {
 		C chan int
 	}
@@ -44,5 +53,5 @@ func TestMustMarshalPanic(t *testing.T) {
 		}
 	}()
 
-	_ = codec.MustMarshal(Bad{}) // должен паниковать
+	_ = codec.MustMarshal(Bad{}) // should panic
 }

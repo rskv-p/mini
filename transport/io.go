@@ -33,34 +33,19 @@ func (t *Transport) RequestWithContext(
 		return ErrDisconnected
 	}
 
+	// ensure trace
 	msg := codec.NewMessage("")
 	if err := codec.Unmarshal(req, msg); err != nil {
 		return err
 	}
-
+	setDefaultTrace(ctx, msg)
 	traceID := msg.GetString("trace_id")
-	if traceID == "" {
-		traceID = TraceIDFromContext(ctx)
-		if traceID == "" {
-			traceID = generateTraceID()
-		}
-		msg.Set("trace_id", traceID)
-		req, _ = codec.Marshal(msg)
-	}
-
-	policy := t.opts.RetryPolicies[subject]
-	max := policy.MaxAttempts
-	if max == 0 {
-		max = defaultRetryAttempts
-	}
-	delay := policy.Delay
-	if delay == 0 {
-		delay = defaultRetryDelay
-	}
+	req, _ = codec.Marshal(msg)
 
 	base := func(subj string, data []byte) error {
 		start := time.Now()
 		respMsg, err := t.conn.Request(subj, data, t.opts.Timeout)
+
 		if t.opts.Metrics != nil {
 			t.opts.Metrics.IncCounter("transport_requests_total")
 			t.opts.Metrics.AddLatency("transport_request_latency_ms", time.Since(start).Milliseconds())
@@ -68,48 +53,14 @@ func (t *Transport) RequestWithContext(
 				t.opts.Metrics.IncCounter("transport_requests_failed")
 			}
 		}
+
 		if err == nil && handler != nil {
 			return handler(respMsg)
 		}
 		return err
 	}
-	call := t.wrapChain(base)
 
-	var lastErr error
-	currDelay := delay
-	for i := 0; i <= max; i++ {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		err := call(subject, req)
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if t.opts.OnRetry != nil {
-			t.opts.OnRetry(subject, i, err)
-		}
-		if !t.opts.AutoReconnect || i == max {
-			break
-		}
-		if t.opts.Logger != nil {
-			t.opts.Logger.Warn(
-				"retry Request [%d/%d] after %v: %v (trace_id=%s)",
-				i+1, max, currDelay, err, traceID,
-			)
-		}
-		time.Sleep(currDelay)
-		currDelay *= 2
-		_ = t.reconnect()
-	}
-
-	if t.opts.OnFailure != nil {
-		t.opts.OnFailure(subject, lastErr)
-	}
-	if t.opts.DeadLetterHandler != nil {
-		t.opts.DeadLetterHandler(subject, req, lastErr)
-	}
-	return lastErr
+	return t.retry("Request", subject, traceID, req, base)
 }
 
 // ----------------------------------------------------
@@ -123,54 +74,61 @@ func (t *Transport) Publish(subject string, data []byte) error {
 
 	msg := codec.NewMessage("")
 	_ = codec.Unmarshal(data, msg)
-
+	setDefaultTrace(context.Background(), msg)
 	traceID := msg.GetString("trace_id")
-	if traceID == "" {
-		traceID = generateTraceID()
-		msg.Set("trace_id", traceID)
-		data, _ = codec.Marshal(msg)
-	}
+	data, _ = codec.Marshal(msg)
 
+	return t.retry("Publish", subject, traceID, data, t.conn.Publish)
+}
+
+// ----------------------------------------------------
+// Retry logic
+// ----------------------------------------------------
+
+func (t *Transport) retry(
+	label string,
+	subject string,
+	traceID string,
+	data []byte,
+	fn func(string, []byte) error,
+) error {
 	policy := t.opts.RetryPolicies[subject]
-	max := policy.MaxAttempts
-	if max == 0 {
-		max = defaultRetryAttempts
+	if policy.MaxAttempts == 0 {
+		policy.MaxAttempts = defaultRetryAttempts
 	}
-	delay := policy.Delay
-	if delay == 0 {
-		delay = defaultRetryDelay
+	if policy.Delay == 0 {
+		policy.Delay = defaultRetryDelay
 	}
 
-	call := t.wrapChain(t.conn.Publish)
+	call := t.wrapChain(fn)
 	var lastErr error
-	currDelay := delay
+	delay := policy.Delay
 
-	for i := 0; i <= max; i++ {
+	for attempt := 0; attempt <= policy.MaxAttempts; attempt++ {
 		err := call(subject, data)
 		if err == nil {
-			if t.opts.Metrics != nil {
+			if label == "Publish" && t.opts.Metrics != nil {
 				t.opts.Metrics.IncCounter("transport_publish_total")
 			}
 			return nil
 		}
+
 		lastErr = err
-		if t.opts.Metrics != nil {
+		if t.opts.Metrics != nil && label == "Publish" {
 			t.opts.Metrics.IncCounter("transport_publish_failed")
 		}
 		if t.opts.OnRetry != nil {
-			t.opts.OnRetry(subject, i, err)
+			t.opts.OnRetry(subject, attempt, err)
 		}
-		if !t.opts.AutoReconnect || i == max {
+		if !t.opts.AutoReconnect || attempt == policy.MaxAttempts {
 			break
 		}
 		if t.opts.Logger != nil {
-			t.opts.Logger.Warn(
-				"retry Publish [%d/%d] after %v: %v (trace_id=%s)",
-				i+1, max, currDelay, err, traceID,
-			)
+			t.opts.Logger.Warn("retry %s [%d/%d] after %v: %v (trace_id=%s)",
+				label, attempt+1, policy.MaxAttempts, delay, err, traceID)
 		}
-		time.Sleep(currDelay)
-		currDelay *= 2
+		time.Sleep(delay)
+		delay *= 2
 		_ = t.reconnect()
 	}
 
@@ -191,14 +149,11 @@ func (t *Transport) Respond(replyTo string, msg codec.IMessage) error {
 	if t.conn == nil {
 		return ErrDisconnected
 	}
-	if msg.GetString("trace_id") == "" {
-		msg.Set("trace_id", generateTraceID())
-	}
+	setDefaultTrace(context.Background(), msg)
 	traceID := msg.GetString("trace_id")
 	if t.opts.Debug {
 		fmt.Printf("[trace] respond → %s (trace_id=%s, ctx=%s)\n",
-			replyTo, traceID, msg.GetContextID(),
-		)
+			replyTo, traceID, msg.GetContextID())
 	}
 	data, err := codec.Marshal(msg)
 	if err != nil {
@@ -212,11 +167,10 @@ func (t *Transport) Broadcast(subjects []string, data []byte) error {
 	if err := codec.Unmarshal(data, msg); err != nil {
 		return fmt.Errorf("broadcast unmarshal: %w", err)
 	}
-	if msg.GetString("trace_id") == "" {
-		msg.Set("trace_id", generateTraceID())
-		data, _ = codec.Marshal(msg)
-	}
+	setDefaultTrace(context.Background(), msg)
 	traceID := msg.GetString("trace_id")
+	data, _ = codec.Marshal(msg)
+
 	if t.opts.Debug {
 		fmt.Printf("[trace] broadcast → %d targets (trace_id=%s)\n", len(subjects), traceID)
 	}
@@ -242,8 +196,22 @@ func (t *Transport) Broadcastf(format string, keys ...string) error {
 }
 
 // ----------------------------------------------------
-// Trace ID helpers
+// Trace helpers
 // ----------------------------------------------------
+
+func setDefaultTrace(ctx context.Context, msg codec.IMessage) {
+	traceID := msg.GetString("trace_id")
+	if traceID == "" {
+		traceID = TraceIDFromContext(ctx)
+		if traceID == "" {
+			traceID = generateTraceID()
+		}
+		msg.Set("trace_id", traceID)
+	}
+	if msg.GetContextID() == "" {
+		msg.SetContextID(traceID)
+	}
+}
 
 func generateTraceID() string {
 	return fmt.Sprintf("trace-%d", time.Now().UnixNano())
@@ -258,6 +226,18 @@ func TraceIDFromContext(ctx context.Context) string {
 		return fmt.Sprint(v)
 	}
 	return ""
+}
+
+func (t *Transport) wrapChain(fn func(string, []byte) error) func(string, []byte) error {
+	return func(subject string, data []byte) error {
+		handler := func(ctx context.Context, subject string, data []byte) error {
+			return fn(subject, data)
+		}
+		for i := len(t.middlewares) - 1; i >= 0; i-- {
+			handler = t.middlewares[i](handler)
+		}
+		return handler(context.Background(), subject, data)
+	}
 }
 
 type traceKey struct{}

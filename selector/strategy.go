@@ -34,6 +34,7 @@ func Random(services []*registry.Service) Next {
 // RoundRobin returns a Next function that cycles through nodes in order.
 func RoundRobin(services []*registry.Service) Next {
 	nodes := collectNodes(services)
+
 	var (
 		mu  sync.Mutex
 		idx int
@@ -55,6 +56,7 @@ func RoundRobin(services []*registry.Service) Next {
 // First returns a Next function that always selects the first node.
 func First(services []*registry.Service) Next {
 	nodes := collectNodes(services)
+
 	return func() (*registry.Node, error) {
 		if len(nodes) == 0 {
 			return nil, ErrNoAvailableNodes
@@ -64,14 +66,35 @@ func First(services []*registry.Service) Next {
 }
 
 // ----------------------------------------------------
+// Named strategies (optional)
+// ----------------------------------------------------
+
+// NamedStrategy returns (name, Strategy) tuple — useful for introspection/logging.
+func NamedStrategy(name string, fn Strategy) (string, Strategy) {
+	return name, fn
+}
+
+// StrategyWithName attaches a name to a Strategy (sugar for SetStrategyNamed).
+func StrategyWithName(name string, fn Strategy) Option {
+	return SetStrategyNamed(name, fn)
+}
+
+// ----------------------------------------------------
 // Helper to collect nodes
 // ----------------------------------------------------
 
 // collectNodes flattens all service nodes into a single slice.
 // Skips nil node entries for safety.
 func collectNodes(services []*registry.Service) []*registry.Node {
+	if services == nil {
+		return nil
+	}
+
 	var nodes []*registry.Node
 	for _, svc := range services {
+		if svc == nil {
+			continue
+		}
 		for _, n := range svc.Nodes {
 			if n != nil {
 				nodes = append(nodes, n)

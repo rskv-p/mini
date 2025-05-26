@@ -1,3 +1,4 @@
+// file: mini/codec/message_test.go
 package codec_test
 
 import (

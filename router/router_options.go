@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/rskv-p/mini/codec"
+	"github.com/rskv-p/mini/logger"
 )
 
 // ----------------------------------------------------
@@ -13,10 +14,12 @@ import (
 
 // Options configures router behavior.
 type Options struct {
-	Name     string           // logical router name
-	NotFound RejectHandler    // called when route is missing
-	OnError  ErrorHook        // called after a handler returns an error
-	Wrappers []HandlerWrapper // global middleware (applied outermost last)
+	Name             string           // Logical router name (e.g. "auth/v1")
+	NotFound         RejectHandler    // Called when route is missing
+	OnError          ErrorHook        // Called after a handler returns an error
+	Wrappers         []HandlerWrapper // Global middleware (outermost first)
+	ContextDecorator ContextDecorator // Optional context enrichment
+	Logger           logger.ILogger   // Optional structured logger
 }
 
 // Option applies a configuration mutation to Options.
@@ -28,11 +31,14 @@ type RejectHandler func(ctx context.Context, msg codec.IMessage, replyTo string)
 // ErrorHook is called after a Handler returns an error.
 type ErrorHook func(ctx context.Context, msg codec.IMessage, err *Error)
 
+// ContextDecorator allows enriching context before calling handler.
+type ContextDecorator func(context.Context, codec.IMessage) context.Context
+
 // ----------------------------------------------------
 // Option builders
 // ----------------------------------------------------
 
-// Name sets a logical name for the router (for introspection/logs).
+// Name sets a logical name for the router (used in logs/debug).
 func Name(name string) Option {
 	return func(o *Options) {
 		o.Name = name
@@ -46,7 +52,7 @@ func OnNotFound(h RejectHandler) Option {
 	}
 }
 
-// OnErrorHook registers a hook triggered after handler error.
+// OnErrorHook registers a hook triggered after a handler returns error.
 func OnErrorHook(h ErrorHook) Option {
 	return func(o *Options) {
 		o.OnError = h
@@ -61,7 +67,21 @@ func UseMiddleware(wrappers ...HandlerWrapper) Option {
 	}
 }
 
-// WithDefaults returns a set of safe default options.
+// WithLogger sets a structured logger for the router.
+func WithLogger(l logger.ILogger) Option {
+	return func(o *Options) {
+		o.Logger = l
+	}
+}
+
+// WithContextDecorator sets a function to mutate context before handler execution.
+func WithContextDecorator(fn ContextDecorator) Option {
+	return func(o *Options) {
+		o.ContextDecorator = fn
+	}
+}
+
+// WithDefaults returns safe default options.
 func WithDefaults() Options {
 	return Options{
 		Name:     "default",

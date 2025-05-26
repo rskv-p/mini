@@ -1,4 +1,4 @@
-// internal.go
+// file: mini/registry/internal.go
 package registry
 
 import (
@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// Register adds or updates service nodes in the registry.
 func (r *Registry) Register(s *Service) error {
 	if s == nil || len(s.Nodes) == 0 {
 		return errors.New("registry: at least one node is required")
@@ -33,6 +34,7 @@ func (r *Registry) Register(s *Service) error {
 		return nil
 	}
 
+	// Update existing service nodes
 	changed := false
 	for _, n := range s.Nodes {
 		if existing.nodeMap == nil {
@@ -53,10 +55,12 @@ func (r *Registry) Register(s *Service) error {
 	return nil
 }
 
+// Deregister removes a node from a service.
 func (r *Registry) Deregister(s *Service) error {
 	if s == nil || len(s.Nodes) == 0 {
 		return errors.New("registry: at least one node is required")
 	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -64,6 +68,7 @@ func (r *Registry) Deregister(s *Service) error {
 	if !ok {
 		return nil
 	}
+
 	nodeID := s.Nodes[0].ID
 	delete(existing.nodeMap, nodeID)
 
@@ -82,6 +87,7 @@ func (r *Registry) Deregister(s *Service) error {
 	return nil
 }
 
+// GetService returns a copy of the requested service.
 func (r *Registry) GetService(name string) ([]*Service, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -93,6 +99,7 @@ func (r *Registry) GetService(name string) ([]*Service, error) {
 	return []*Service{cloneService(svc)}, nil
 }
 
+// ListServices returns all registered services.
 func (r *Registry) ListServices() ([]*Service, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -104,15 +111,18 @@ func (r *Registry) ListServices() ([]*Service, error) {
 	return list, nil
 }
 
+// TotalServices returns the number of registered services.
 func (r *Registry) TotalServices() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.services)
 }
 
+// TotalNodes returns the number of nodes for a given service.
 func (r *Registry) TotalNodes(service string) int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	svc, ok := r.services[service]
 	if !ok {
 		return 0
@@ -120,6 +130,7 @@ func (r *Registry) TotalNodes(service string) int {
 	return len(svc.Nodes)
 }
 
+// Dump returns a sorted map of service → node IDs.
 func (r *Registry) Dump() map[string][]string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -136,18 +147,21 @@ func (r *Registry) Dump() map[string][]string {
 	return out
 }
 
+// AddWatcher registers a new service watcher.
 func (r *Registry) AddWatcher(w Watcher) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.watchers[w] = struct{}{}
 }
 
+// RemoveWatcher unregisters a watcher.
 func (r *Registry) RemoveWatcher(w Watcher) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.watchers, w)
 }
 
+// notifyWatchers informs all watchers about a service update.
 func (r *Registry) notifyWatchers(svc *Service) {
 	for w := range r.watchers {
 		go func(w Watcher) {
@@ -162,6 +176,7 @@ func (r *Registry) notifyWatchers(svc *Service) {
 	}
 }
 
+// startJanitor launches TTL-based cleanup loop (once).
 func (r *Registry) startJanitor() {
 	r.once.Do(func() {
 		ticker := time.NewTicker(r.ttl)
@@ -179,6 +194,7 @@ func (r *Registry) startJanitor() {
 	})
 }
 
+// purgeExpired removes stale nodes and services based on TTL.
 func (r *Registry) purgeExpired() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -201,16 +217,19 @@ func (r *Registry) purgeExpired() {
 	}
 }
 
+// UpdateTTL changes the TTL interval used by the janitor.
 func (r *Registry) UpdateTTL(d time.Duration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ttl = d
 }
 
+// Close stops janitor and frees resources.
 func (r *Registry) Close() {
 	close(r.stopPurge)
 }
 
+// cloneService creates a deep copy of a service with cloned nodes and metadata.
 func cloneService(src *Service) *Service {
 	out := &Service{
 		Name:    src.Name,
@@ -219,15 +238,12 @@ func cloneService(src *Service) *Service {
 	}
 	for i, n := range src.Nodes {
 		cpy := *n
-
-		// Глубокая копия Metadata
 		if n.Metadata != nil {
 			cpy.Metadata = make(map[string]string, len(n.Metadata))
 			for k, v := range n.Metadata {
 				cpy.Metadata[k] = v
 			}
 		}
-
 		out.Nodes[i] = &cpy
 		out.nodeMap[cpy.ID] = &cpy
 	}

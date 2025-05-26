@@ -1,3 +1,4 @@
+// file: mini/recover/recover_test.go
 package recover_test
 
 import (

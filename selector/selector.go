@@ -10,6 +10,9 @@ import (
 	"github.com/rskv-p/mini/registry"
 )
 
+// For test coverage only (not exported normally)
+var TestableCollectNodes = collectNodes
+
 // ----------------------------------------------------
 // Selector interfaces and types
 // ----------------------------------------------------
@@ -21,6 +24,8 @@ type ISelector interface {
 	Init() error
 	Select(service string, filters ...SelectorFilter) (string, error)
 	SelectNode(service string, filters ...SelectorFilter) (*registry.Node, error)
+	Invalidate(service string)
+	DumpCache() map[string][]string
 }
 
 // Strategy defines how to pick nodes from services.
@@ -39,7 +44,13 @@ type SelectorFilter func(*registry.Node) bool
 // MatchMeta returns a filter matching node metadata key/value.
 func MatchMeta(key, value string) SelectorFilter {
 	return func(n *registry.Node) bool {
-		return n.Metadata[key] == value
+		return n != nil && n.Metadata[key] == value
+	}
+}
+
+func MatchID(id string) SelectorFilter {
+	return func(n *registry.Node) bool {
+		return n != nil && n.ID == id
 	}
 }
 
@@ -54,7 +65,7 @@ type cachedServices struct {
 
 // NewSelector creates a new Selector with given registry and options.
 func NewSelector(reg registry.IRegistry, opts ...Option) ISelector {
-	sOpts := Options{}
+	sOpts := WithDefaults()
 	for _, opt := range opts {
 		opt(&sOpts)
 	}
@@ -70,9 +81,8 @@ type Selector struct {
 	registry registry.IRegistry
 	opts     Options
 
-	cacheTTL time.Duration
-	mu       sync.RWMutex
-	cache    map[string]cachedServices
+	mu    sync.RWMutex
+	cache map[string]cachedServices
 }
 
 // Init ensures registry and strategy are set.
@@ -83,8 +93,8 @@ func (s *Selector) Init() error {
 	if s.opts.Strategy == nil {
 		s.opts.Strategy = RoundRobin
 	}
-	if s.cacheTTL == 0 {
-		s.cacheTTL = 2 * time.Second
+	if s.opts.CacheTTL <= 0 {
+		s.opts.CacheTTL = 2 * time.Second
 	}
 	return nil
 }
@@ -111,6 +121,9 @@ func (s *Selector) SelectNode(service string, filters ...SelectorFilter) (*regis
 	// apply filters to nodes
 	var filtered []*registry.Service
 	for _, svc := range services {
+		if svc == nil || len(svc.Nodes) == 0 {
+			continue
+		}
 		var keep []*registry.Node
 		for _, n := range svc.Nodes {
 			if matchesAllFilters(n, filters) {
@@ -130,14 +143,28 @@ func (s *Selector) SelectNode(service string, filters ...SelectorFilter) (*regis
 	return next()
 }
 
-// matchesAllFilters checks if node passes all filters.
-func matchesAllFilters(n *registry.Node, filters []SelectorFilter) bool {
-	for _, f := range filters {
-		if !f(n) {
-			return false
+// Invalidate clears cached service entry.
+func (s *Selector) Invalidate(service string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.cache, service)
+}
+
+// DumpCache returns snapshot of cached node IDs per service.
+func (s *Selector) DumpCache() map[string][]string {
+	out := make(map[string][]string)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for name, entry := range s.cache {
+		for _, svc := range entry.services {
+			for _, n := range svc.Nodes {
+				if n != nil {
+					out[name] = append(out[name], n.ID)
+				}
+			}
 		}
 	}
-	return true
+	return out
 }
 
 // getCachedServices returns services from cache or queries the registry.
@@ -146,11 +173,10 @@ func (s *Selector) getCachedServices(service string) ([]*registry.Service, error
 	entry, ok := s.cache[service]
 	s.mu.RUnlock()
 
-	if ok && time.Since(entry.timestamp) <= s.cacheTTL {
+	if ok && time.Since(entry.timestamp) <= s.opts.CacheTTL {
 		return entry.services, nil
 	}
 
-	// not cached or expired
 	services, err := s.registry.GetService(service)
 	if err != nil {
 		return nil, fmt.Errorf("selector: registry error for %q: %w", service, err)
@@ -164,4 +190,14 @@ func (s *Selector) getCachedServices(service string) ([]*registry.Service, error
 	s.mu.Unlock()
 
 	return services, nil
+}
+
+// matchesAllFilters checks if node passes all filters.
+func matchesAllFilters(n *registry.Node, filters []SelectorFilter) bool {
+	for _, f := range filters {
+		if !f(n) {
+			return false
+		}
+	}
+	return true
 }

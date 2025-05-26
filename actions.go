@@ -10,14 +10,15 @@ import (
 	"github.com/rskv-p/mini/router"
 )
 
+// ----------------------------------------------------
+// Context utils
+// ----------------------------------------------------
+
 type contextKey string
 
 const ContextIDKey contextKey = "contextID"
 
 func ContextIDFrom(ctx context.Context) string {
-	if ctx == nil {
-		return ""
-	}
 	if v := ctx.Value(ContextIDKey); v != nil {
 		if s, ok := v.(string); ok {
 			return s
@@ -27,11 +28,10 @@ func ContextIDFrom(ctx context.Context) string {
 }
 
 // ----------------------------------------------------
-// Action interface and types
+// Action interfaces and types
 // ----------------------------------------------------
 
 type ActionFunc func(ctx context.Context, input map[string]any) (any, error)
-
 type Middleware func(ActionFunc) ActionFunc
 
 type InputSchemaField struct {
@@ -52,7 +52,7 @@ type actionInfo struct {
 }
 
 // ----------------------------------------------------
-// Registration
+// Action registration
 // ----------------------------------------------------
 
 func (s *Service) RegisterAction(name string, schema []InputSchemaField, fn ActionFunc) {
@@ -80,6 +80,11 @@ func (s *Service) ListActions() []string {
 	return keys
 }
 
+func (s *Service) ActionSchema(name string) ([]InputSchemaField, bool) {
+	info, ok := s.actions[name]
+	return info.schema, ok
+}
+
 func (s *Service) GetSchemas() map[string][]InputSchemaField {
 	out := make(map[string][]InputSchemaField, len(s.actions))
 	for k, v := range s.actions {
@@ -88,23 +93,21 @@ func (s *Service) GetSchemas() map[string][]InputSchemaField {
 	return out
 }
 
-func (s *Service) ActionSchema(name string) ([]InputSchemaField, bool) {
-	info, ok := s.actions[name]
-	return info.schema, ok
-}
-
 func (s *Service) GetOpenAPISchemas() map[string]any {
 	schemas := make(map[string]any, len(s.actions))
 	for name, info := range s.actions {
 		required := []string{}
-		properties := make(map[string]any)
+		properties := map[string]any{}
 		for _, f := range info.schema {
 			properties[f.Name] = map[string]string{"type": f.Type}
 			if f.Required {
 				required = append(required, f.Name)
 			}
 		}
-		schema := map[string]any{"type": "object", "properties": properties}
+		schema := map[string]any{
+			"type":       "object",
+			"properties": properties,
+		}
 		if len(required) > 0 {
 			schema["required"] = required
 		}
@@ -125,7 +128,7 @@ func chainMiddlewares(fn ActionFunc, mws ...Middleware) ActionFunc {
 }
 
 // ----------------------------------------------------
-// prepareHandler — action → router.Handler
+// Handler wrapping (router.Handler → from ActionFunc)
 // ----------------------------------------------------
 
 func (s *Service) prepareHandler(fn ActionFunc) router.Handler {
@@ -135,16 +138,16 @@ func (s *Service) prepareHandler(fn ActionFunc) router.Handler {
 			ctx = context.WithValue(ctx, ContextIDKey, ctxID)
 		}
 
-		node := raw.GetNode()
+		actionID := raw.GetNode()
 		body := raw.GetBodyMap()
 
-		// validate schema
-		info, ok := s.actions[node]
+		// schema validation
+		info, ok := s.actions[actionID]
 		if ok && len(info.schema) > 0 {
-			for _, f := range info.schema {
-				v, exists := body[f.Name]
-				if f.Required && (!exists || v == nil || isEmpty(v)) {
-					msg := fmt.Sprintf("missing required field: %s", f.Name)
+			for _, field := range info.schema {
+				val, exists := body[field.Name]
+				if field.Required && (!exists || isEmpty(val)) {
+					msg := fmt.Sprintf("missing required field: %s", field.Name)
 					s.logger.WithContext(ctxID).Warn(msg)
 
 					resp := codec.NewJsonResponse(ctxID, 400)
@@ -155,8 +158,7 @@ func (s *Service) prepareHandler(fn ActionFunc) router.Handler {
 			}
 		}
 
-		// apply middleware
-		wrapped := chainMiddlewares(fn, s.middlewares...)
+		handler := chainMiddlewares(fn, s.middlewares...)
 
 		defer func() {
 			if r := recover(); r != nil {
@@ -167,7 +169,7 @@ func (s *Service) prepareHandler(fn ActionFunc) router.Handler {
 			}
 		}()
 
-		result, err := wrapped(ctx, body)
+		result, err := handler(ctx, body)
 
 		status := 200
 		if err != nil {
@@ -189,7 +191,7 @@ func (s *Service) prepareHandler(fn ActionFunc) router.Handler {
 }
 
 // ----------------------------------------------------
-// Utils
+// Utility
 // ----------------------------------------------------
 
 func isEmpty(v any) bool {
